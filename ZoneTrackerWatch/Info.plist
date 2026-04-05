@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>ZoneTracker reads heart rate during workouts to display your current zone and track training progress.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>ZoneTracker saves workouts to Apple Health.</string>
+	<key>WKApplication</key>
+	<true/>
+</dict>
+</plist>

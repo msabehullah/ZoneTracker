@@ -1,0 +1,58 @@
+name: ZoneTracker
+options:
+  bundleIdPrefix: com.zonetracker
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  xcodeVersion: "15.0"
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  ZoneTracker:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ZoneTracker
+        excludes:
+          - "**/.DS_Store"
+    resources:
+      - path: ZoneTracker/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_FILE: ZoneTracker/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ZoneTracker/ZoneTracker.entitlements
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    entitlements:
+      path: ZoneTracker/ZoneTracker.entitlements
+    dependencies:
+      - target: ZoneTrackerWatch
+
+  ZoneTrackerWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: ZoneTrackerWatch
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.watchkitapp
+        INFOPLIST_FILE: ZoneTrackerWatch/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ZoneTrackerWatch/ZoneTrackerWatch.entitlements
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    entitlements:
+      path: ZoneTrackerWatch/ZoneTrackerWatch.entitlements
+    dependencies: []
