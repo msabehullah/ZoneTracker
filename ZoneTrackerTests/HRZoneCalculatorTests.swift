@@ -43,8 +43,8 @@ final class HRZoneCalculatorTests: XCTestCase {
 
         let zoneTime = calc.timeInZones(samples: samples)
 
-        XCTAssertEqual(zoneTime[.zone2], 120, accuracy: 0.1, "Should have 120s in Zone 2")
-        XCTAssertEqual(zoneTime[.zone4], 60, accuracy: 0.1, "Should have 60s in Zone 4")
+        XCTAssertEqual(zoneTime[.zone2] ?? 0, 120, accuracy: 0.1, "Should have 120s in Zone 2")
+        XCTAssertEqual(zoneTime[.zone4] ?? 0, 60, accuracy: 0.1, "Should have 60s in Zone 4")
     }
 
     func testTimeInZonesEmptyForSingleSample() {
