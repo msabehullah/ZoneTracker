@@ -76,7 +76,7 @@ jobs:
           echo "Testing on simulator: $DEST"
           xcodebuild test \
             -project ZoneTracker.xcodeproj \
-            -scheme ZoneTrackerTests \
+            -scheme ZoneTracker \
             -destination "platform=iOS Simulator,name=$DEST" \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO

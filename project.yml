@@ -13,6 +13,15 @@ settings:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: ""
 
+schemes:
+  ZoneTracker:
+    build:
+      targets:
+        ZoneTracker: all
+    test:
+      targets:
+        - ZoneTrackerTests
+
 targets:
   ZoneTracker:
     type: application
@@ -71,11 +80,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.widget
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_FILE: ZoneTrackerWidget/Info.plist
-    info:
-      path: ZoneTrackerWidget/Info.plist
-      properties:
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
     dependencies: []
 
   ZoneTrackerTests:
@@ -89,5 +93,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.tests
+        GENERATE_INFOPLIST_FILE: "YES"
     dependencies:
       - target: ZoneTracker
