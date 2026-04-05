@@ -102,8 +102,9 @@ final class PhaseManagerTests: XCTestCase {
     private func makeQualifyingPhase1Workouts(weeks: Int) -> [WorkoutEntry] {
         var workouts: [WorkoutEntry] = []
         for week in 0..<weeks {
+            // Use week * 7 so week 0 = today (current week) and week 1 = 7 days ago (previous week)
             workouts.append(
-                makeWorkout(daysAgo: week * 7 + 1, duration: 50 * 60, sessionType: .zone2,
+                makeWorkout(daysAgo: week * 7, duration: 50 * 60, sessionType: .zone2,
                            phase: .phase1, avgHR: 140, drift: 3.0)
             )
         }

@@ -20,7 +20,7 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testReducesIntensityWhenHRTooHigh() {
         let profile = makeProfile()
-        let workouts = [makeWorkout(avgHR: 160)]  // well above zone 2 ceiling of 150
+        let workouts = lastWeekFillers() + [makeWorkout(daysAgo: 0, avgHR: 160)]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
 
         XCTAssertEqual(rec.sessionType, .zone2)
@@ -29,7 +29,7 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testIncreasesIntensityWhenHRTooLow() {
         let profile = makeProfile()
-        let workouts = [makeWorkout(avgHR: 120)]  // well below zone 2 floor of 130
+        let workouts = lastWeekFillers() + [makeWorkout(daysAgo: 0, avgHR: 120)]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
 
         XCTAssertEqual(rec.sessionType, .zone2)
@@ -38,7 +38,7 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testHoldsSteadyOnSignificantDrift() {
         let profile = makeProfile()
-        let workouts = [makeWorkout(avgHR: 140, drift: 12.0)]  // drift >= 10%
+        let workouts = lastWeekFillers() + [makeWorkout(daysAgo: 0, avgHR: 140, drift: 12.0)]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
 
         XCTAssertEqual(rec.adjustmentType, .holdSteady)
@@ -46,7 +46,7 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testProgressesWhenInZoneAndStable() {
         let profile = makeProfile()
-        let workouts = [makeWorkout(avgHR: 140, drift: 3.0, duration: 40 * 60)]
+        let workouts = lastWeekFillers() + [makeWorkout(daysAgo: 0, avgHR: 140, drift: 3.0, duration: 40 * 60)]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
 
         // Should increase duration or intensity
@@ -59,8 +59,8 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testPhase1AlwaysRecommendsZone2() {
         let profile = makeProfile(phase: .phase1)
-        let workouts = (0..<5).map { i in
-            makeWorkout(daysAgo: i, avgHR: 140)
+        let workouts = lastWeekFillers() + (0..<3).map { i in
+            makeWorkoutInCurrentWeek(dayOffset: i, avgHR: 140)
         }
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
         XCTAssertEqual(rec.sessionType, .zone2, "Phase 1 should only have Zone 2 sessions")
@@ -70,10 +70,10 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testPhase2AddsIntervalsAfterZone2Complete() {
         let profile = makeProfile(phase: .phase2)
-        // 2 Zone 2 sessions this week
-        let workouts = [
-            makeWorkout(daysAgo: 0, sessionType: .zone2, phase: .phase2),
-            makeWorkout(daysAgo: 1, sessionType: .zone2, phase: .phase2)
+        // 2 Zone 2 sessions this week + fillers in last week
+        let workouts = lastWeekFillers(phase: .phase2) + [
+            makeWorkoutInCurrentWeek(dayOffset: 0, sessionType: .zone2, phase: .phase2),
+            makeWorkoutInCurrentWeek(dayOffset: 1, sessionType: .zone2, phase: .phase2)
         ]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
         XCTAssertTrue(rec.sessionType.isInterval, "Should recommend interval after 2 Zone 2 sessions")
@@ -114,7 +114,6 @@ final class RecommendationEngineTests: XCTestCase {
 
         XCTAssertNotNil(bikeMetrics["resistance"])
         XCTAssertNotNil(bikeMetrics["cadence"])
-        // Speed 6.5 is 50% into treadmill range (1-12), so bike metrics should be roughly mid-range
         XCTAssertGreaterThan(bikeMetrics["resistance"]!, 1)
         XCTAssertLessThan(bikeMetrics["resistance"]!, 30)
     }
@@ -123,11 +122,12 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testPhase3Enforces48HourSpacing() {
         let profile = makeProfile(phase: .phase3)
-        // 2 Zone 2 done + 1 interval done very recently (< 48h ago)
-        let workouts = [
-            makeWorkout(daysAgo: 0, sessionType: .interval_30_30, phase: .phase3),
-            makeWorkout(daysAgo: 1, sessionType: .zone2, phase: .phase3),
-            makeWorkout(daysAgo: 2, sessionType: .zone2, phase: .phase3)
+        let now = Date()
+        // Place 2 Zone 2 + 1 recent interval in current week + fillers in last week
+        let workouts = lastWeekFillers(count: 3, phase: .phase3) + [
+            makeWorkoutInCurrentWeek(dayOffset: 0, sessionType: .zone2, phase: .phase3),
+            makeWorkoutInCurrentWeek(dayOffset: 1, sessionType: .zone2, phase: .phase3),
+            makeWorkoutAt(date: now.addingTimeInterval(-3600), sessionType: .interval_30_30, phase: .phase3)
         ]
         let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
         // Should recommend Zone 2 instead of another interval due to 48h spacing
@@ -153,6 +153,31 @@ final class RecommendationEngineTests: XCTestCase {
         phase: TrainingPhase = .phase1
     ) -> WorkoutEntry {
         let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return makeWorkoutAt(date: date, avgHR: avgHR, drift: drift, duration: duration,
+                            sessionType: sessionType, phase: phase)
+    }
+
+    private func makeWorkoutInCurrentWeek(
+        dayOffset: Int = 0,
+        avgHR: Int = 140,
+        drift: Double = 3.0,
+        duration: TimeInterval = 45 * 60,
+        sessionType: SessionType = .zone2,
+        phase: TrainingPhase = .phase1
+    ) -> WorkoutEntry {
+        let date = Date().startOfWeek.addingTimeInterval(Double(dayOffset) * 86400 + 43200)
+        return makeWorkoutAt(date: date, avgHR: avgHR, drift: drift, duration: duration,
+                            sessionType: sessionType, phase: phase)
+    }
+
+    private func makeWorkoutAt(
+        date: Date,
+        avgHR: Int = 140,
+        drift: Double = 3.0,
+        duration: TimeInterval = 45 * 60,
+        sessionType: SessionType = .zone2,
+        phase: TrainingPhase = .phase1
+    ) -> WorkoutEntry {
         let hrData = HeartRateData(
             avgHR: avgHR, maxHR: avgHR + 15, minHR: avgHR - 10,
             timeInZone2: duration * 0.8, timeInZone4Plus: 0,
@@ -168,5 +193,18 @@ final class RecommendationEngineTests: XCTestCase {
             phase: phase,
             weekNumber: 4
         )
+    }
+
+    /// Creates filler workouts in the previous calendar week to pass the consistency check.
+    private func lastWeekFillers(
+        count: Int = 3,
+        phase: TrainingPhase = .phase1
+    ) -> [WorkoutEntry] {
+        let calendar = Calendar.current
+        let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: Date().startOfWeek)!
+        return (0..<count).map { i in
+            let date = lastWeekStart.addingTimeInterval(Double(i + 1) * 86400 + 43200)
+            return makeWorkoutAt(date: date, phase: phase)
+        }
     }
 }
