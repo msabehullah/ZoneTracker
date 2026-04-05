@@ -24,5 +24,7 @@
 	<string>ZoneTracker saves workouts to Apple Health.</string>
 	<key>WKApplication</key>
 	<true/>
+	<key>WKCompanionAppBundleIdentifier</key>
+	<string>com.zonetracker.app</string>
 </dict>
 </plist>
