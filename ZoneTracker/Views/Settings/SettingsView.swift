@@ -4,6 +4,7 @@ import SwiftData
 // MARK: - Settings View
 
 struct SettingsView: View {
+    @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     @Bindable var profile: UserProfile
     @Environment(\.modelContext) private var context
 
@@ -16,6 +17,8 @@ struct SettingsView: View {
     @State private var zone2High: Int = 150
     @State private var showingResetAlert = false
     @State private var showingSavedBanner = false
+    @State private var showingExportShare = false
+    @State private var exportURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -26,6 +29,8 @@ struct SettingsView: View {
                     legDaysSection
                     phaseSection
                     healthKitSection
+                    notificationsSection
+                    exportSection
                     dangerZone
                 }
                 .padding()
@@ -269,6 +274,87 @@ struct SettingsView: View {
         .settingsCard()
     }
 
+    // MARK: - Notifications Section
+
+    private var notificationsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Notifications")
+
+            Text("Get reminded when you haven't trained in a while, and celebrate phase advancements.")
+                .font(.caption)
+                .foregroundColor(.gray)
+
+            Button {
+                Task {
+                    await NotificationManager.shared.requestAuthorization()
+                    NotificationManager.shared.scheduleInactivityReminder(
+                        lastWorkoutDate: workouts.first?.date
+                    )
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "bell.badge")
+                    Text("Enable Reminders")
+                }
+                .font(.subheadline)
+                .foregroundColor(.zone2Green)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.cardBorder)
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+        }
+        .settingsCard()
+    }
+
+    // MARK: - Export Section
+
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Data")
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(workouts.count) workouts")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
+                    Text("Export your full workout history as CSV")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+                Spacer()
+            }
+
+            Button {
+                let csv = DataExporter.exportCSV(workouts: workouts)
+                exportURL = DataExporter.writeToTempFile(csv: csv)
+                if exportURL != nil {
+                    showingExportShare = true
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "square.and.arrow.up")
+                    Text("Export CSV")
+                }
+                .font(.subheadline)
+                .foregroundColor(.zone2Green)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.cardBorder)
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
+            .disabled(workouts.isEmpty)
+            .sheet(isPresented: $showingExportShare) {
+                if let url = exportURL {
+                    ShareSheet(items: [url])
+                }
+            }
+        }
+        .settingsCard()
+    }
+
     // MARK: - Danger Zone
 
     private var dangerZone: some View {
@@ -355,6 +441,8 @@ struct SettingsView: View {
         profile.zone2TargetLow = min(zone2Low, zone2High - 5)
         profile.zone2TargetHigh = max(zone2High, zone2Low + 5)
 
+        ConnectivityManager.shared.sendZoneSettings(profile: profile)
+
         withAnimation(.spring(response: 0.3)) {
             showingSavedBanner = true
         }
@@ -379,4 +467,16 @@ private extension View {
             .background(Color.cardBackground)
             .cornerRadius(16)
     }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

@@ -37,6 +37,7 @@ targets:
       path: ZoneTracker/ZoneTracker.entitlements
     dependencies:
       - target: ZoneTrackerWatch
+      - target: ZoneTrackerWidgetExtension
 
   ZoneTrackerWatch:
     type: application
@@ -56,3 +57,37 @@ targets:
     entitlements:
       path: ZoneTrackerWatch/ZoneTrackerWatch.entitlements
     dependencies: []
+
+  ZoneTrackerWidgetExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ZoneTrackerWidget
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_FILE: ZoneTrackerWidget/Info.plist
+    info:
+      path: ZoneTrackerWidget/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies: []
+
+  ZoneTrackerTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ZoneTrackerTests
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.tests
+    dependencies:
+      - target: ZoneTracker

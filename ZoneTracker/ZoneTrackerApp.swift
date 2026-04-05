@@ -36,6 +36,11 @@ struct AppRootView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task {
+            // Initialize singletons
+            _ = ConnectivityManager.shared
+            await NotificationManager.shared.requestAuthorization()
+        }
     }
 
     private func createProfile() {

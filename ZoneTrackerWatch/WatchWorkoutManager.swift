@@ -112,6 +112,16 @@ class WatchWorkoutManager: NSObject, ObservableObject {
             summaryMaxHR = maxHR
             summaryCalories = activeCalories
             summaryTimeInZone2 = zone2Accumulator
+
+            // Sync to iPhone
+            WatchConnectivityManager.shared.sendWorkoutToPhone(
+                duration: summaryDuration,
+                avgHR: summaryAvgHR,
+                maxHR: summaryMaxHR,
+                calories: summaryCalories,
+                timeInZone2: summaryTimeInZone2,
+                activityType: workout?.workoutActivityType.rawValue.description ?? "running"
+            )
         } catch {
             print("Failed to end workout: \(error)")
         }
