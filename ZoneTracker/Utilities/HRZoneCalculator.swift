@@ -43,6 +43,13 @@ struct HRZoneCalculator {
     let maxHR: Int
     let zone2Override: ClosedRange<Int>?
 
+    private var classifier: HeartRateZoneClassifier {
+        HeartRateZoneClassifier(
+            maxHeartRate: maxHR,
+            zone2Range: zone2Override ?? Int(Double(maxHR) * 0.60)...Int(Double(maxHR) * 0.70)
+        )
+    }
+
     init(maxHR: Int, zone2Override: ClosedRange<Int>? = nil) {
         self.maxHR = maxHR
         self.zone2Override = zone2Override
@@ -54,37 +61,29 @@ struct HRZoneCalculator {
     }
 
     // Standard zone boundaries (percentage of max HR)
-    var zone1Ceiling: Int { Int(Double(maxHR) * 0.60) }
-    var zone2Floor: Int { zone2Override?.lowerBound ?? Int(Double(maxHR) * 0.60) }
-    var zone2Ceiling: Int { zone2Override?.upperBound ?? Int(Double(maxHR) * 0.70) }
-    var zone3Ceiling: Int { Int(Double(maxHR) * 0.80) }
-    var zone4Ceiling: Int { Int(Double(maxHR) * 0.90) }
+    var zone1Ceiling: Int { classifier.zone1Ceiling }
+    var zone2Floor: Int { classifier.zone2Range.lowerBound }
+    var zone2Ceiling: Int { classifier.zone2Range.upperBound }
+    var zone3Ceiling: Int { classifier.zone3Ceiling }
+    var zone4Ceiling: Int { classifier.zone4Ceiling }
 
     func zone(for hr: Int) -> HRZone {
-        // Use custom Zone 2 range if set
-        if let override = zone2Override {
-            if hr < override.lowerBound { return .zone1 }
-            if hr <= override.upperBound { return .zone2 }
-            if hr <= zone3Ceiling { return .zone3 }
-            if hr <= zone4Ceiling { return .zone4 }
-            return .zone5
+        switch classifier.zone(for: hr) {
+        case .zone1: return .zone1
+        case .zone2: return .zone2
+        case .zone3: return .zone3
+        case .zone4: return .zone4
+        case .zone5: return .zone5
         }
-
-        // Standard percentage-based zones
-        if hr < zone1Ceiling { return .zone1 }
-        if hr <= Int(Double(maxHR) * 0.70) { return .zone2 }
-        if hr <= zone3Ceiling { return .zone3 }
-        if hr <= zone4Ceiling { return .zone4 }
-        return .zone5
     }
 
     func zoneRange(for zone: HRZone) -> ClosedRange<Int> {
         switch zone {
-        case .zone1: return 0...zone2Floor - 1
-        case .zone2: return zone2Floor...zone2Ceiling
-        case .zone3: return zone2Ceiling + 1...zone3Ceiling
-        case .zone4: return zone3Ceiling + 1...zone4Ceiling
-        case .zone5: return zone4Ceiling + 1...maxHR
+        case .zone1: return classifier.zoneRange(for: .zone1)
+        case .zone2: return classifier.zoneRange(for: .zone2)
+        case .zone3: return classifier.zoneRange(for: .zone3)
+        case .zone4: return classifier.zoneRange(for: .zone4)
+        case .zone5: return classifier.zoneRange(for: .zone5)
         }
     }
 
@@ -110,28 +109,6 @@ struct HRZoneCalculator {
 
     /// Calculate HR drift from samples (first 10 min avg vs last 10 min avg)
     static func calculateDrift(samples: [HRSample]) -> Double {
-        guard samples.count > 2,
-              let first = samples.first?.timestamp,
-              let last = samples.last?.timestamp else { return 0 }
-
-        let totalDuration = last.timeIntervalSince(first)
-        guard totalDuration > 600 else { return 0 } // Need at least 10 min
-
-        let tenMinutes: TimeInterval = 600
-
-        let firstSegment = samples.filter {
-            $0.timestamp.timeIntervalSince(first) <= tenMinutes
-        }
-        let lastSegment = samples.filter {
-            last.timeIntervalSince($0.timestamp) <= tenMinutes
-        }
-
-        guard !firstSegment.isEmpty, !lastSegment.isEmpty else { return 0 }
-
-        let firstAvg = Double(firstSegment.map(\.bpm).reduce(0, +)) / Double(firstSegment.count)
-        let lastAvg = Double(lastSegment.map(\.bpm).reduce(0, +)) / Double(lastSegment.count)
-
-        guard firstAvg > 0 else { return 0 }
-        return ((lastAvg - firstAvg) / firstAvg) * 100
+        HeartRateDriftCalculator.calculate(samples: samples)
     }
 }

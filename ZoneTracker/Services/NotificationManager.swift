@@ -72,7 +72,11 @@ class NotificationManager: ObservableObject {
 
     func scheduleWeeklySummary(sessionsCompleted: Int, target: Int) {
         let remaining = target - sessionsCompleted
-        guard remaining > 0 else { return }
+        guard remaining > 0 else {
+            UNUserNotificationCenter.current()
+                .removePendingNotificationRequests(withIdentifiers: ["weekly_summary"])
+            return
+        }
 
         // Schedule for Sunday at 10am
         var components = DateComponents()
@@ -87,6 +91,8 @@ class NotificationManager: ObservableObject {
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
         let request = UNNotificationRequest(identifier: "weekly_summary", content: content, trigger: trigger)
 
+        UNUserNotificationCenter.current()
+            .removePendingNotificationRequests(withIdentifiers: ["weekly_summary"])
         UNUserNotificationCenter.current().add(request)
     }
 
@@ -101,6 +107,7 @@ class NotificationManager: ObservableObject {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, delay), repeats: false)
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
 
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
         UNUserNotificationCenter.current().add(request)
     }
 }

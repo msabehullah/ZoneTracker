@@ -23,7 +23,7 @@ struct PhaseManager {
     // MARK: - Phase 1 → Phase 2
 
     /// Criteria: sustain 45+ min Zone 2 with stable HR (drift <5%) for 2 consecutive weeks,
-    /// AND at least 5 weeks in Phase 1.
+    /// AND at least 6 weeks in Phase 1.
     private static func evaluatePhase1to2(
         profile: UserProfile,
         workouts: [WorkoutEntry]
@@ -54,7 +54,7 @@ struct PhaseManager {
     // MARK: - Phase 2 → Phase 3
 
     /// Criteria: complete 12+ interval rounds at target HR AND Zone 2 pace improvement
-    /// AND at least 5 weeks in Phase 2.
+    /// AND at least 6 weeks in Phase 2.
     private static func evaluatePhase2to3(
         profile: UserProfile,
         workouts: [WorkoutEntry]
@@ -127,9 +127,7 @@ struct PhaseManager {
             let weekStart = calendar.date(byAdding: .weekOfYear, value: -(i), to: Date().startOfWeek) ?? Date()
             let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) ?? Date()
             let weekWorkouts = workouts.filter { $0.date >= weekStart && $0.date < weekEnd }
-            if !weekWorkouts.isEmpty {
-                result.append(weekWorkouts)
-            }
+            result.append(weekWorkouts)
         }
 
         return result

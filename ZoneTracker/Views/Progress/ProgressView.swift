@@ -20,50 +20,71 @@ struct ProgressDashboardView: View {
                     mileTimeChart
                     recoveryChart
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.appBackground)
             .navigationTitle("Progress")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .task {
                 await viewModel.load(workouts: workouts, profile: profile)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
     // MARK: - Phase Timeline
 
     private var phaseTimeline: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Training Timeline")
-                .font(.headline)
-                .foregroundColor(.white)
+        let currentItem = viewModel.phaseTimeline.last ?? (phase: profile.phase, startDate: profile.phaseStartDate, endDate: nil)
 
-            ForEach(viewModel.phaseTimeline.indices, id: \.self) { i in
-                let item = viewModel.phaseTimeline[i]
-                HStack(spacing: 12) {
-                    Circle()
-                        .fill(item.endDate == nil ? Color.zone2Green : Color.gray)
-                        .frame(width: 12, height: 12)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Training Timeline")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                    Text(currentItem.phase.subtitle)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.phase.displayName + " — " + item.phase.subtitle)
-                            .font(.subheadline.bold())
-                            .foregroundColor(item.endDate == nil ? .white : .gray)
+                Spacer(minLength: 12)
 
-                        let start = item.startDate.shortDate
-                        let end = item.endDate?.shortDate ?? "Current"
-                        Text("\(start) → \(end)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.gray)
-                    }
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(currentItem.phase.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.zone2Green)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(Color.zone2Green.opacity(0.16))
+                        )
+
+                    Text(currentItem.phase.weekRange)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundColor(.gray)
                 }
             }
+
+            HStack(spacing: 8) {
+                ForEach(TrainingPhase.allCases) { phase in
+                    phaseStep(phase, currentPhase: currentItem.phase)
+                }
+            }
+
+            HStack(spacing: 12) {
+                timelineMetric(title: "Started", value: currentItem.startDate.shortDate)
+                timelineMetric(title: "Target", value: "\(currentItem.phase.targetSessionsPerWeek)x/week")
+                timelineMetric(title: "Status", value: currentItem.endDate == nil ? "Current" : "Completed")
+            }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard()
     }
 
     // MARK: - Resting HR Chart
@@ -94,19 +115,25 @@ struct ProgressDashboardView: View {
                 .chartYAxis { axisStyle() }
                 .chartXAxis { dateAxisStyle() }
             } else {
-                noDataView("Resting HR data from your Apple Watch will appear here.")
+                noDataView(
+                    "Resting HR data from your Apple Watch will appear here.",
+                    systemImage: "heart.circle.fill"
+                )
             }
         }
     }
 
-    // MARK: - Pace at 150 BPM
+    // MARK: - Pace in Target Range
 
     private var paceChart: some View {
-        chartCard(title: "Pace at 150 BPM", subtitle: "Speed that keeps you at 150 bpm") {
-            if viewModel.paceAt150History.count > 1 {
+        chartCard(
+            title: "Pace in Target Range",
+            subtitle: "Treadmill speed while holding \(profile.zone2TargetLow)-\(profile.zone2TargetHigh) bpm"
+        ) {
+            if viewModel.paceInTargetHistory.count > 1 {
                 Chart {
-                    ForEach(viewModel.paceAt150History.indices, id: \.self) { i in
-                        let point = viewModel.paceAt150History[i]
+                    ForEach(viewModel.paceInTargetHistory.indices, id: \.self) { i in
+                        let point = viewModel.paceInTargetHistory[i]
                         LineMark(
                             x: .value("Date", point.date),
                             y: .value("Speed", point.speed)
@@ -127,7 +154,10 @@ struct ProgressDashboardView: View {
                 .chartYAxis { axisStyle() }
                 .chartXAxis { dateAxisStyle() }
             } else {
-                noDataView("Log treadmill Zone 2 sessions where your avg HR is near 150 bpm to track pace improvement.")
+                noDataView(
+                    "Log treadmill Zone 2 sessions inside your target range to track pace improvement.",
+                    systemImage: "speedometer"
+                )
             }
         }
     }
@@ -152,7 +182,10 @@ struct ProgressDashboardView: View {
                 .chartYAxis { axisStyle() }
                 .chartXAxis { dateAxisStyle() }
             } else {
-                noDataView("Log mile benchmark tests to track your progress over time.")
+                noDataView(
+                    "Log mile benchmark tests to track your progress over time.",
+                    systemImage: "flag.checkered"
+                )
             }
         }
     }
@@ -185,7 +218,10 @@ struct ProgressDashboardView: View {
                 .chartYAxis { axisStyle() }
                 .chartXAxis { dateAxisStyle() }
             } else {
-                noDataView("Recovery rate data will appear as you log workouts with heart rate data.")
+                noDataView(
+                    "Recovery rate data will appear as you log workouts with heart rate data.",
+                    systemImage: "waveform.path.ecg"
+                )
             }
         }
     }
@@ -198,27 +234,82 @@ struct ProgressDashboardView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
                     .foregroundColor(.white)
-                Spacer()
                 Text(subtitle)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundColor(.gray)
+                    .lineLimit(2)
             }
             content()
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard()
     }
 
-    private func noDataView(_ message: String) -> some View {
-        Text(message)
-            .font(.caption)
-            .foregroundColor(.gray)
-            .frame(maxWidth: .infinity, minHeight: 80, alignment: .center)
+    private func phaseStep(_ phase: TrainingPhase, currentPhase: TrainingPhase) -> some View {
+        let isCurrent = phase == currentPhase
+        let isCompleted = phaseIndex(for: phase) < phaseIndex(for: currentPhase)
+        let accent = isCurrent ? Color.zone2Green : (isCompleted ? Color.white.opacity(0.8) : Color.gray)
+        let titleColor = isCurrent ? Color.white : (isCompleted ? Color.white.opacity(0.9) : Color.gray)
+        let background = isCurrent ? Color.zone2Green.opacity(0.12) : Color.black.opacity(isCompleted ? 0.12 : 0.06)
+        let border = isCurrent ? Color.zone2Green.opacity(0.45) : Color.cardBorder
+        let status = isCurrent ? "Current" : (isCompleted ? "Done" : "Next")
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(accent)
+                    .frame(width: 8, height: 8)
+
+                Text(status)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(accent)
+                    .lineLimit(1)
+            }
+
+            Text(phase.displayName)
+                .font(.caption.weight(.bold))
+                .foregroundColor(titleColor)
+
+            Text(phase.weekRange)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundColor(.gray)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(background)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(border, lineWidth: 1)
+                )
+        )
+    }
+
+    private func timelineMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.gray)
+            Text(value)
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func noDataView(_ message: String, systemImage: String) -> some View {
+        InlineEmptyState(
+            systemImage: systemImage,
+            message: message,
+            minHeight: 112
+        )
     }
 
     private func axisStyle() -> some AxisContent {
@@ -247,5 +338,9 @@ struct ProgressDashboardView: View {
         let diff = recentAvg - earlierAvg
         if abs(diff) < 1 { return "Stable" }
         return diff < 0 ? "↓ Improving" : "↑ Elevated"
+    }
+
+    private func phaseIndex(for phase: TrainingPhase) -> Int {
+        TrainingPhase.allCases.firstIndex(of: phase) ?? 0
     }
 }

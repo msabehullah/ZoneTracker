@@ -120,8 +120,10 @@ final class WorkoutEntryTests: XCTestCase {
         XCTAssertEqual(makeWorkout(avgHR: 0).zoneBadge, "—")
         XCTAssertEqual(makeWorkout(avgHR: 100).zoneBadge, "Z1")
         XCTAssertEqual(makeWorkout(avgHR: 140).zoneBadge, "Z2")
-        XCTAssertEqual(makeWorkout(avgHR: 160).zoneBadge, "Z3")
-        XCTAssertEqual(makeWorkout(avgHR: 175).zoneBadge, "Z4")
+        XCTAssertEqual(makeWorkout(avgHR: 151).zoneBadge, "Z3")
+        XCTAssertEqual(makeWorkout(avgHR: 160).zoneBadge, "Z4")
+        XCTAssertEqual(makeWorkout(avgHR: 170).zoneBadge, "Z4")
+        XCTAssertEqual(makeWorkout(avgHR: 175).zoneBadge, "Z5")
         XCTAssertEqual(makeWorkout(avgHR: 185).zoneBadge, "Z5")
     }
 

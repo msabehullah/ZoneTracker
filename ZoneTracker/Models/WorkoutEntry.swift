@@ -3,9 +3,22 @@ import SwiftData
 
 // MARK: - Workout Entry
 
+enum WorkoutSource: String, Codable, CaseIterable, Sendable {
+    case manualEntry
+    case healthKitImport
+    case watchPlanned
+    case watchFreeWorkout
+    case cloudImport
+}
+
 @Model
 final class WorkoutEntry {
     @Attribute(.unique) var id: UUID
+    var accountIdentifier: String?
+    var completionIdentifier: String?
+    var planIdentifier: String?
+    var recommendationIdentifier: String?
+    var sourceRaw: String = WorkoutSource.manualEntry.rawValue
     var date: Date
     var exerciseTypeRaw: String    // ExerciseType rawValue
     var duration: TimeInterval     // seconds
@@ -19,6 +32,11 @@ final class WorkoutEntry {
     var intervalProtocolData: Data? // JSON-encoded IntervalProtocol
 
     init(
+        accountIdentifier: String? = nil,
+        completionIdentifier: String? = nil,
+        planIdentifier: String? = nil,
+        recommendationIdentifier: String? = nil,
+        source: WorkoutSource = .manualEntry,
         date: Date = Date(),
         exerciseType: ExerciseType,
         duration: TimeInterval,
@@ -32,6 +50,11 @@ final class WorkoutEntry {
         intervalProtocol: IntervalProtocol? = nil
     ) {
         self.id = UUID()
+        self.accountIdentifier = accountIdentifier
+        self.completionIdentifier = completionIdentifier
+        self.planIdentifier = planIdentifier
+        self.recommendationIdentifier = recommendationIdentifier
+        self.sourceRaw = source.rawValue
         self.date = date
         self.exerciseTypeRaw = exerciseType.rawValue
         self.duration = duration
@@ -101,13 +124,15 @@ final class WorkoutEntry {
         return "\(minutes)m \(seconds)s"
     }
 
+    var source: WorkoutSource {
+        get { WorkoutSource(rawValue: sourceRaw) ?? .manualEntry }
+        set { sourceRaw = newValue.rawValue }
+    }
+
     var zoneBadge: String {
         let avg = heartRateData.avgHR
         if avg == 0 { return "—" }
-        if avg < 113 { return "Z1" }
-        if avg <= 150 { return "Z2" }
-        if avg <= 170 { return "Z3" }
-        if avg <= 180 { return "Z4" }
-        return "Z5"
+        let classifier = HeartRateZoneClassifier(maxHeartRate: 189, zone2Range: 130...150)
+        return classifier.zone(for: avg).badge
     }
 }

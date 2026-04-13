@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Exercise Type
 
-enum ExerciseType: String, Codable, CaseIterable, Identifiable {
+enum ExerciseType: String, Codable, CaseIterable, Identifiable, Sendable {
     case treadmill
     case elliptical
     case stairClimber
@@ -79,7 +79,7 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Metric Definition
 
-struct MetricDefinition: Identifiable {
+struct MetricDefinition: Identifiable, Sendable {
     let key: String
     let name: String
     let unit: String
@@ -93,7 +93,7 @@ struct MetricDefinition: Identifiable {
 
 // MARK: - Session Type
 
-enum SessionType: String, Codable, CaseIterable, Identifiable {
+enum SessionType: String, Codable, CaseIterable, Identifiable, Sendable {
     case zone2
     case interval_30_30
     case interval_tempo
@@ -156,7 +156,7 @@ enum SessionType: String, Codable, CaseIterable, Identifiable {
 
 // MARK: - Adjustment Type
 
-enum AdjustmentType: String, Codable {
+enum AdjustmentType: String, Codable, Sendable {
     case holdSteady
     case increaseIntensity
     case decreaseIntensity

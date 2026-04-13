@@ -5,24 +5,35 @@ import SwiftData
 
 @Model
 final class UserProfile {
-    var age: Int
-    var maxHR: Int
-    var weight: Double       // lbs
-    var height: Double       // inches
-    var currentPhase: String // TrainingPhase rawValue
-    var phaseStartDate: Date
-    var hasCompletedOnboarding: Bool
-    var zone2TargetLow: Int  // customizable Zone 2 floor
-    var zone2TargetHigh: Int // customizable Zone 2 ceiling
-    var legDays: [Int]       // weekday indices (1=Sun, 2=Mon, ..., 7=Sat) for heavy leg days
+    var profileIdentifier: String = ""
+    var accountIdentifier: String?
+    var age: Int = 31
+    var maxHR: Int = 189
+    var weight: Double = 150       // lbs
+    var height: Double = 68        // inches
+    var currentPhase: String = TrainingPhase.phase1.rawValue // TrainingPhase rawValue
+    var phaseStartDate: Date = Date()
+    var hasCompletedOnboarding: Bool = false
+    var zone2TargetLow: Int = 130  // customizable Zone 2 floor
+    var zone2TargetHigh: Int = 150 // customizable Zone 2 ceiling
+    var legDays: [Int] = []        // weekday indices (1=Sun, 2=Mon, ..., 7=Sat) for heavy leg days
+    var biologicalSex: String = "notSet" // "male", "female", "other", "notSet"
+    var coachingHapticsEnabled: Bool = true
+    var coachingAlertCooldownSeconds: Int = 18
 
     init(
+        profileIdentifier: String = UUID().uuidString,
+        accountIdentifier: String? = nil,
         age: Int = 31,
         weight: Double = 150,
         height: Double = 68,
         zone2TargetLow: Int = 130,
-        zone2TargetHigh: Int = 150
+        zone2TargetHigh: Int = 150,
+        coachingHapticsEnabled: Bool = true,
+        coachingAlertCooldownSeconds: Int = 18
     ) {
+        self.profileIdentifier = profileIdentifier
+        self.accountIdentifier = accountIdentifier
         self.age = age
         self.maxHR = 220 - age
         self.weight = weight
@@ -33,6 +44,8 @@ final class UserProfile {
         self.zone2TargetLow = zone2TargetLow
         self.zone2TargetHigh = zone2TargetHigh
         self.legDays = []
+        self.coachingHapticsEnabled = coachingHapticsEnabled
+        self.coachingAlertCooldownSeconds = coachingAlertCooldownSeconds
     }
 
     // MARK: - Computed Properties
@@ -50,6 +63,13 @@ final class UserProfile {
 
     var zone2Range: ClosedRange<Int> {
         zone2TargetLow...zone2TargetHigh
+    }
+
+    var coachingPreferences: CoachingPreferences {
+        CoachingPreferences(
+            hapticsEnabled: coachingHapticsEnabled,
+            outOfRangeCooldown: TimeInterval(coachingAlertCooldownSeconds)
+        )
     }
 
     // HR zones based on maxHR
@@ -72,5 +92,9 @@ final class UserProfile {
         let calendar = Calendar.current
         let dayBefore = calendar.date(byAdding: .day, value: -1, to: date)!
         return isLegDay(dayBefore)
+    }
+
+    func shouldAvoidHighIntensity(on date: Date) -> Bool {
+        isLegDay(date) || isAdjacentToLegDay(date)
     }
 }

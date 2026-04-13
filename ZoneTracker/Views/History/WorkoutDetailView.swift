@@ -6,6 +6,7 @@ import Charts
 struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let workout: WorkoutEntry
+    let profile: UserProfile
 
     var body: some View {
         NavigationStack {
@@ -93,10 +94,10 @@ struct WorkoutDetailView: View {
                     }
 
                     // Zone 2 band
-                    RuleMark(y: .value("Z2 Low", 130))
+                    RuleMark(y: .value("Z2 Low", profile.zone2TargetLow))
                         .foregroundStyle(.green.opacity(0.4))
                         .lineStyle(StrokeStyle(dash: [4, 4]))
-                    RuleMark(y: .value("Z2 High", 150))
+                    RuleMark(y: .value("Z2 High", profile.zone2TargetHigh))
                         .foregroundStyle(.green.opacity(0.4))
                         .lineStyle(StrokeStyle(dash: [4, 4]))
                 }

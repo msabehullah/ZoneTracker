@@ -369,11 +369,31 @@ struct LogWorkoutView: View {
                     .foregroundColor(.white)
 
                 if let rec = viewModel.resultRecommendation {
+                    let plan = WorkoutPlanningService.plan(
+                        from: rec,
+                        profile: profile,
+                        accountIdentifier: profile.accountIdentifier
+                    )
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Up Next")
                             .font(.headline)
                             .foregroundColor(.white)
-                        NextWorkoutCard(recommendation: rec) {}
+                        NextWorkoutCard(
+                            recommendation: rec,
+                            plan: plan,
+                            watchStatus: "Send this recommendation to your Apple Watch when you're ready.",
+                            onSendToWatch: {
+                                ConnectivityManager.shared.sendWorkoutPlan(
+                                    plan,
+                                    profile: WorkoutPlanningService.companionProfile(
+                                        from: profile,
+                                        accountIdentifier: profile.accountIdentifier
+                                    )
+                                )
+                            },
+                            secondaryTitle: nil,
+                            onManualLog: nil
+                        )
                     }
                     .padding(.horizontal)
                 }

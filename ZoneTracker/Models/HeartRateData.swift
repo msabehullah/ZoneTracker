@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Heart Rate Sample
 
-struct HRSample: Codable, Identifiable {
+struct HRSample: Codable, Identifiable, Equatable, Sendable {
     var id: Date { timestamp }
     let timestamp: Date
     let bpm: Int
@@ -10,7 +10,7 @@ struct HRSample: Codable, Identifiable {
 
 // MARK: - Heart Rate Data
 
-struct HeartRateData: Codable {
+struct HeartRateData: Codable, Equatable, Sendable {
     var avgHR: Int
     var maxHR: Int
     var minHR: Int
@@ -40,7 +40,7 @@ struct HeartRateData: Codable {
 
 // MARK: - Interval Protocol
 
-struct IntervalProtocol: Codable, Equatable {
+struct IntervalProtocol: Codable, Equatable, Sendable {
     var workDuration: TimeInterval   // seconds
     var restDuration: TimeInterval   // seconds
     var rounds: Int

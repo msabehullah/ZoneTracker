@@ -19,6 +19,7 @@ class WorkoutLogViewModel {
     var importError: String?
     var showingResult = false
     var resultRecommendation: WorkoutRecommendation?
+    private var didImportFromHealthKit = false
 
     private let healthKit = HealthKitManager.shared
 
@@ -30,6 +31,7 @@ class WorkoutLogViewModel {
         duration = rec.targetDuration
         metrics = rec.suggestedMetrics
         intervalProtocol = rec.intervalProtocol
+        didImportFromHealthKit = false
     }
 
     func resetMetricsToDefaults() {
@@ -42,6 +44,7 @@ class WorkoutLogViewModel {
         } else {
             intervalProtocol = nil
         }
+        didImportFromHealthKit = false
     }
 
     func onExerciseTypeChanged(from oldType: ExerciseType) {
@@ -81,6 +84,7 @@ class WorkoutLogViewModel {
                 from: latest.start, to: latest.end, profile: profile
             )
             heartRateData = hrData
+            didImportFromHealthKit = true
         } catch {
             importError = "Failed to import: \(error.localizedDescription)"
         }
@@ -96,6 +100,7 @@ class WorkoutLogViewModel {
         allWorkouts: [WorkoutEntry]
     ) -> WorkoutRecommendation? {
         let entry = WorkoutEntry(
+            accountIdentifier: profile.accountIdentifier,
             date: Date(),
             exerciseType: selectedExercise,
             duration: duration,
@@ -108,6 +113,7 @@ class WorkoutLogViewModel {
             notes: notes.isEmpty ? nil : notes,
             intervalProtocol: intervalProtocol
         )
+        entry.source = didImportFromHealthKit ? .healthKitImport : .manualEntry
 
         context.insert(entry)
 
@@ -115,9 +121,9 @@ class WorkoutLogViewModel {
         var updatedWorkouts = allWorkouts
         updatedWorkouts.append(entry)
 
-        if let transitionMessage = PhaseManager.evaluatePhaseTransition(
+        if PhaseManager.evaluatePhaseTransition(
             profile: profile, workouts: updatedWorkouts
-        ) {
+        ) != nil {
             profile.advancePhase()
             // The transition message will be shown via the dashboard
         }

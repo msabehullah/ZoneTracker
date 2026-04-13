@@ -13,7 +13,9 @@ struct OnboardingView: View {
     @State private var weightText = "150"
     @State private var heightFeet = 5
     @State private var heightInches = 8
+    @State private var selectedSex = "notSet"
     @State private var isRequestingHealthKit = false
+    @State private var didPreFill = false
 
     var body: some View {
         ZStack {
@@ -56,6 +58,25 @@ struct OnboardingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .task {
+            guard !didPreFill else { return }
+            didPreFill = true
+            try? await HealthKitManager.shared.requestAuthorization()
+            let chars = await HealthKitManager.shared.fetchUserCharacteristics()
+            if let age = chars.age, (10...100).contains(age) {
+                ageText = "\(age)"
+            }
+            if let weight = chars.weightLbs, weight > 0 {
+                weightText = "\(Int(weight))"
+            }
+            if let totalInches = chars.heightInches, totalInches > 0 {
+                heightFeet = Int(totalInches) / 12
+                heightInches = Int(totalInches) % 12
+            }
+            if let sex = chars.biologicalSex {
+                selectedSex = sex
+            }
+        }
     }
 
     // MARK: - Step 1: Welcome
@@ -131,6 +152,26 @@ struct OnboardingView: View {
                     }
                     .pickerStyle(.menu)
                     .tint(.white)
+                }
+                .padding()
+                .background(Color.cardBackground)
+                .cornerRadius(12)
+
+                HStack {
+                    Text("Sex")
+                        .foregroundColor(.gray)
+                        .frame(width: 70, alignment: .leading)
+
+                    Picker("Sex", selection: $selectedSex) {
+                        Text("Not Set").tag("notSet")
+                        Text("Male").tag("male")
+                        Text("Female").tag("female")
+                        Text("Other").tag("other")
+                    }
+                    .pickerStyle(.menu)
+                    .tint(.white)
+
+                    Spacer()
                 }
                 .padding()
                 .background(Color.cardBackground)
@@ -271,12 +312,14 @@ struct OnboardingView: View {
         profile.maxHR = 220 - age
         profile.weight = Double(weightText) ?? 150
         profile.height = Double(heightFeet * 12 + heightInches)
+        profile.biologicalSex = selectedSex
     }
 
     private func completeOnboarding() {
         applyProfile()
         profile.hasCompletedOnboarding = true
         profile.phaseStartDate = Date()
+        profile.accountIdentifier = AccountStore.shared.appleUserID
 
         Task {
             try? await HealthKitManager.shared.requestAuthorization()

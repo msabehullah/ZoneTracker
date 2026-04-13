@@ -6,6 +6,7 @@ import SwiftData
 struct HistoryView: View {
     @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     @Environment(\.modelContext) private var context
+    let profile: UserProfile
 
     @State private var viewModel = HistoryViewModel()
     @State private var selectedWorkout: WorkoutEntry?
@@ -19,31 +20,34 @@ struct HistoryView: View {
                     workoutList
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.appBackground)
             .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(item: $selectedWorkout) { workout in
-                WorkoutDetailView(workout: workout)
+                WorkoutDetailView(workout: workout, profile: profile)
             }
             .onAppear { viewModel.load(workouts: workouts) }
             .onChange(of: workouts.count) { viewModel.load(workouts: workouts) }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "figure.run")
-                .font(.system(size: 50))
-                .foregroundColor(.gray)
-            Text("No workouts yet")
-                .font(.headline)
-                .foregroundColor(.gray)
-            Text("Your workout history will appear here.")
-                .font(.caption)
-                .foregroundColor(.gray)
+        ScrollView {
+            FeatureEmptyStateCard(
+                systemImage: "figure.run.circle.fill",
+                title: "History builds as you train",
+                message: "Completed Apple Watch sessions and manual workout logs will appear here automatically.",
+                footnote: "Start your next planned workout from Dashboard."
+            )
+            .appCard()
+            .padding(.horizontal)
+            .padding(.top, 24)
+            .padding(.bottom, 28)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var workoutList: some View {
@@ -74,6 +78,8 @@ struct HistoryView: View {
                 }
             }
             .padding(.horizontal)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
         }
     }
 
@@ -114,7 +120,7 @@ struct HistoryView: View {
                     .foregroundColor(.white)
                 if entry.heartRateData.avgHR > 0 {
                     HStack(spacing: 4) {
-                        Text(entry.zoneBadge)
+                        Text(zoneBadge(for: entry))
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundColor(zoneColor(for: entry))
                         Text("\(entry.heartRateData.avgHR) bpm")
@@ -124,16 +130,32 @@ struct HistoryView: View {
                 }
             }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(12)
+        .appCard(cornerRadius: 14, padding: 14)
+    }
+
+    private func zoneBadge(for entry: WorkoutEntry) -> String {
+        let avgHR = entry.heartRateData.avgHR
+        guard avgHR > 0 else { return "—" }
+        let classifier = HeartRateZoneClassifier(
+            maxHeartRate: profile.maxHR,
+            zone2Range: profile.zone2Range
+        )
+        return classifier.zone(for: avgHR).badge
     }
 
     private func zoneColor(for entry: WorkoutEntry) -> Color {
-        let avg = entry.heartRateData.avgHR
-        if avg <= 150 { return .green }
-        if avg <= 170 { return .yellow }
-        if avg <= 180 { return .orange }
-        return .red
+        let avgHR = entry.heartRateData.avgHR
+        guard avgHR > 0 else { return .gray }
+        let classifier = HeartRateZoneClassifier(
+            maxHeartRate: profile.maxHR,
+            zone2Range: profile.zone2Range
+        )
+        switch classifier.zone(for: avgHR) {
+        case .zone1: return .gray
+        case .zone2: return .green
+        case .zone3: return .yellow
+        case .zone4: return .orange
+        case .zone5: return .red
+        }
     }
 }

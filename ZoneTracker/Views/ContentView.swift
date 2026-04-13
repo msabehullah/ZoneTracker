@@ -14,7 +14,7 @@ struct ContentView: View {
                 }
                 .tag(0)
 
-            HistoryView()
+            HistoryView(profile: profile)
                 .tabItem {
                     Label("History", systemImage: "list.bullet.rectangle")
                 }
@@ -34,5 +34,26 @@ struct ContentView: View {
         }
         .tint(.zone2Green)
         .preferredColorScheme(.dark)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.appBackground.ignoresSafeArea())
+        .onAppear {
+            #if DEBUG
+            if let tab = Self.debugSelectedTab {
+                selectedTab = tab
+            }
+            #endif
+        }
+    }
+}
+
+private extension ContentView {
+    static var debugSelectedTab: Int? {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-codex-selected-tab"),
+              arguments.indices.contains(index + 1),
+              let tab = Int(arguments[index + 1]) else {
+            return nil
+        }
+        return max(0, min(3, tab))
     }
 }

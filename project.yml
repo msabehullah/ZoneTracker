@@ -11,7 +11,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "RQZH44BDG7"
+    CODE_SIGN_STYLE: Automatic
 
 schemes:
   ZoneTracker:
@@ -28,6 +29,7 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
+      - path: Shared
       - path: ZoneTracker
         excludes:
           - "**/.DS_Store"
@@ -44,6 +46,16 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     entitlements:
       path: ZoneTracker/ZoneTracker.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.applesignin:
+          - Default
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.zonetracker.app
+        com.apple.security.application-groups:
+          - group.com.zonetracker.app
     dependencies:
       - target: ZoneTrackerWatch
       - target: ZoneTrackerWidgetExtension
@@ -53,6 +65,10 @@ targets:
     platform: watchOS
     deploymentTarget: "10.0"
     sources:
+      - path: Shared
+      - path: ZoneTracker/Models/ExerciseType.swift
+      - path: ZoneTracker/Models/TrainingPhase.swift
+      - path: ZoneTracker/Models/HeartRateData.swift
       - path: ZoneTrackerWatch
         excludes:
           - "**/.DS_Store"
@@ -65,6 +81,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: ZoneTrackerWatch/ZoneTrackerWatch.entitlements
+      properties:
+        com.apple.developer.healthkit: true
     dependencies: []
 
   ZoneTrackerWidgetExtension:
@@ -80,6 +98,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.zonetracker.app.widget
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_FILE: ZoneTrackerWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ZoneTrackerWidget/ZoneTrackerWidget.entitlements
     dependencies: []
 
   ZoneTrackerTests:

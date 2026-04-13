@@ -9,6 +9,7 @@ import WidgetKit
 @Observable
 class DashboardViewModel {
     var nextRecommendation: WorkoutRecommendation?
+    var currentPlan: WorkoutExecutionPlan?
     var sessionsThisWeek: Int = 0
     var targetSessionsThisWeek: Int = 3
     var totalSessions: Int = 0
@@ -22,6 +23,13 @@ class DashboardViewModel {
     func load(profile: UserProfile, workouts: [WorkoutEntry]) {
         // Generate recommendation
         nextRecommendation = RecommendationEngine.recommend(profile: profile, workouts: workouts)
+        currentPlan = nextRecommendation.map {
+            WorkoutPlanningService.plan(
+                from: $0,
+                profile: profile,
+                accountIdentifier: profile.accountIdentifier
+            )
+        }
 
         // Session counts
         sessionsThisWeek = workouts.inCurrentWeek().count
@@ -42,6 +50,16 @@ class DashboardViewModel {
         // Update widget data
         updateWidgetData(profile: profile)
 
+        let companionProfile = WorkoutPlanningService.companionProfile(
+            from: profile,
+            accountIdentifier: profile.accountIdentifier
+        )
+        if let currentPlan {
+            ConnectivityManager.shared.sendWorkoutPlan(currentPlan, profile: companionProfile)
+        } else {
+            ConnectivityManager.shared.sendCompanionProfile(companionProfile)
+        }
+
         // Update notification reminders
         NotificationManager.shared.scheduleInactivityReminder(
             lastWorkoutDate: workouts.first?.date
@@ -49,6 +67,17 @@ class DashboardViewModel {
         NotificationManager.shared.scheduleWeeklySummary(
             sessionsCompleted: sessionsThisWeek,
             target: targetSessionsThisWeek
+        )
+    }
+
+    func sendPlanToWatch(profile: UserProfile) {
+        guard let currentPlan else { return }
+        ConnectivityManager.shared.sendWorkoutPlan(
+            currentPlan,
+            profile: WorkoutPlanningService.companionProfile(
+                from: profile,
+                accountIdentifier: profile.accountIdentifier
+            )
         )
     }
 

@@ -50,23 +50,28 @@ struct RecommendationEngine {
         let thisWeek = workouts.inCurrentWeek()
         let zone2Count = thisWeek.zone2Sessions().count
         let intervalCount = thisWeek.intervalSessions().count
+        let targetZone2Sessions = profile.phase.zone2SessionsPerWeek
+        let targetIntervalSessions = profile.phase.intervalSessionsPerWeek
+        let shouldDeferHighIntensity = profile.shouldAvoidHighIntensity(on: Date())
 
         switch profile.phase {
         case .phase1:
             return .zone2
 
         case .phase2:
-            // 2x Zone 2, 1x Interval per week
-            if zone2Count < 2 { return .zone2 }
-            if intervalCount < 1 { return pickIntervalType(for: .phase2, workouts: workouts) }
+            if zone2Count < targetZone2Sessions { return .zone2 }
+            if intervalCount < targetIntervalSessions {
+                if shouldDeferHighIntensity { return .zone2 }
+                return pickIntervalType(for: .phase2, workouts: workouts)
+            }
             return .zone2
 
         case .phase3:
-            // 2x Zone 2, 1-2x High-intensity per week
-            if zone2Count < 2 { return .zone2 }
-            if intervalCount < 2 {
+            if zone2Count < targetZone2Sessions { return .zone2 }
+            if intervalCount < targetIntervalSessions {
+                if shouldDeferHighIntensity { return .zone2 }
                 // Check 48-hour spacing from last interval
-                if let lastInterval = thisWeek.intervalSessions().last {
+                if let lastInterval = thisWeek.intervalSessions().sorted(by: { $0.date > $1.date }).first {
                     let hoursSince = Date().timeIntervalSince(lastInterval.date) / 3600
                     if hoursSince < 48 { return .zone2 }
                 }
@@ -111,10 +116,6 @@ struct RecommendationEngine {
         var duration = lastZ2.duration
         var reasoning: String
         var adjustment: AdjustmentType
-
-        // Check for leg day conflicts
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        let avoidHighIntensity = profile.isAdjacentToLegDay(Date())
 
         if avgHR == 0 {
             // No HR data — carry forward last settings
@@ -339,12 +340,19 @@ struct RecommendationEngine {
         profile: UserProfile,
         reasoning: String
     ) -> WorkoutRecommendation {
-        WorkoutRecommendation(
+        let targetRange: ClosedRange<Int>
+        if let intervalTarget = workout.intervalProtocol?.targetWorkHR {
+            targetRange = intervalTarget
+        } else {
+            targetRange = profile.zone2Range
+        }
+
+        return WorkoutRecommendation(
             sessionType: workout.sessionType,
             exerciseType: workout.exerciseType,
             targetDuration: workout.duration,
-            targetHRLow: profile.zone2TargetLow,
-            targetHRHigh: profile.zone2TargetHigh,
+            targetHRLow: targetRange.lowerBound,
+            targetHRHigh: targetRange.upperBound,
             suggestedMetrics: workout.metrics,
             intervalProtocol: workout.intervalProtocol,
             reasoning: reasoning,

@@ -5,11 +5,11 @@ final class PhaseManagerTests: XCTestCase {
 
     // MARK: - Phase 1 → 2 Transition
 
-    func testPhase1DoesNotAdvanceBefore5Weeks() {
+    func testPhase1DoesNotAdvanceBefore6Weeks() {
         let profile = makeProfile(phase: .phase1, weeksAgo: 3)
         let workouts = makeQualifyingPhase1Workouts(weeks: 2)
         let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
-        XCTAssertNil(result, "Should not advance before minimum 5 weeks")
+        XCTAssertNil(result, "Should not advance before minimum 6 weeks")
     }
 
     func testPhase1AdvancesWithQualifyingWorkouts() {
@@ -41,6 +41,16 @@ final class PhaseManagerTests: XCTestCase {
         ]
         let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
         XCTAssertNil(result, "Should not advance with sessions < 45 minutes")
+    }
+
+    func testPhase1DoesNotAdvanceWhenCurrentWeekIsEmpty() {
+        let profile = makeProfile(phase: .phase1, weeksAgo: 6)
+        let workouts = [
+            makeWorkout(daysAgo: 7, duration: 50 * 60, sessionType: .zone2, phase: .phase1, avgHR: 140, drift: 3.0),
+            makeWorkout(daysAgo: 14, duration: 50 * 60, sessionType: .zone2, phase: .phase1, avgHR: 140, drift: 3.0)
+        ]
+        let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
+        XCTAssertNil(result, "Should require qualifying work in the current and previous week, not skip empty weeks")
     }
 
     // MARK: - Phase 3 (no transition)

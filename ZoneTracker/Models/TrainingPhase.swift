@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Training Phase
 
-enum TrainingPhase: String, Codable, CaseIterable, Identifiable {
+enum TrainingPhase: String, Codable, CaseIterable, Identifiable, Sendable {
     case phase1
     case phase2
     case phase3
@@ -43,8 +43,8 @@ enum TrainingPhase: String, Codable, CaseIterable, Identifiable {
 
     var minimumWeeks: Int {
         switch self {
-        case .phase1: return 5
-        case .phase2: return 5
+        case .phase1: return 6
+        case .phase2: return 6
         case .phase3: return 0
         }
     }

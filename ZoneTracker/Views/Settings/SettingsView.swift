@@ -7,6 +7,8 @@ struct SettingsView: View {
     @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     @Bindable var profile: UserProfile
     @Environment(\.modelContext) private var context
+    @State private var accountStore = AccountStore.shared
+    @State private var syncCoordinator = AppSyncCoordinator.shared
 
     // Local editing state
     @State private var ageText: String = ""
@@ -15,6 +17,8 @@ struct SettingsView: View {
     @State private var heightInches: Int = 8
     @State private var zone2Low: Int = 130
     @State private var zone2High: Int = 150
+    @State private var coachingHapticsEnabled = true
+    @State private var coachingAlertCooldown = 18
     @State private var showingResetAlert = false
     @State private var showingSavedBanner = false
     @State private var showingExportShare = false
@@ -24,8 +28,10 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
+                    accountSection
                     profileSection
                     zone2Section
+                    coachingSection
                     legDaysSection
                     phaseSection
                     healthKitSection
@@ -33,10 +39,14 @@ struct SettingsView: View {
                     exportSection
                     dangerZone
                 }
-                .padding()
+                .padding(.horizontal)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.appBackground)
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -52,10 +62,51 @@ struct SettingsView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
     // MARK: - Profile Section
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Account")
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(accountStore.displayName ?? "Signed in with Apple")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                Text(accountStore.email ?? "Private Apple relay or hidden email")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                if let lastSyncDate = syncCoordinator.lastSyncDate {
+                    Text("Last cloud sync: \(lastSyncDate.fullDate)")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+                if let syncError = syncCoordinator.lastSyncError {
+                    Text(syncError)
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            Button(role: .destructive) {
+                accountStore.signOut()
+            } label: {
+                HStack {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                    Text("Sign Out")
+                }
+                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+        }
+        .settingsCard()
+    }
 
     private var profileSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -109,6 +160,35 @@ struct SettingsView: View {
                 Text("\(220 - (Int(ageText) ?? profile.age)) bpm")
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(.gray)
+            }
+        }
+        .settingsCard()
+    }
+
+    private var coachingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Coaching")
+
+            Toggle(isOn: $coachingHapticsEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Watch Haptic Coaching")
+                        .foregroundColor(.white)
+                    Text("Alert when your heart rate leaves the active target range, then re-arm after you return.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                }
+            }
+            .tint(.zone2Green)
+
+            settingRow("Cooldown") {
+                Stepper(
+                    "\(coachingAlertCooldown) sec",
+                    value: $coachingAlertCooldown,
+                    in: 10...45,
+                    step: 1
+                )
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.white)
             }
         }
         .settingsCard()
@@ -403,10 +483,9 @@ struct SettingsView: View {
     // MARK: - Helpers
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(.caption, design: .rounded).bold())
-            .foregroundColor(.gray)
-            .kerning(1)
+        Text(title)
+            .font(.system(.headline, design: .rounded).weight(.semibold))
+            .foregroundColor(.white)
     }
 
     private func settingRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
@@ -430,6 +509,8 @@ struct SettingsView: View {
         heightInches = totalInches % 12
         zone2Low = profile.zone2TargetLow
         zone2High = profile.zone2TargetHigh
+        coachingHapticsEnabled = profile.coachingHapticsEnabled
+        coachingAlertCooldown = profile.coachingAlertCooldownSeconds
     }
 
     private func save() {
@@ -440,8 +521,23 @@ struct SettingsView: View {
         profile.height = Double(heightFeet * 12 + heightInches)
         profile.zone2TargetLow = min(zone2Low, zone2High - 5)
         profile.zone2TargetHigh = max(zone2High, zone2Low + 5)
+        profile.coachingHapticsEnabled = coachingHapticsEnabled
+        profile.coachingAlertCooldownSeconds = coachingAlertCooldown
+        profile.accountIdentifier = accountStore.appleUserID
 
-        ConnectivityManager.shared.sendZoneSettings(profile: profile)
+        ConnectivityManager.shared.sendCompanionProfile(
+            WorkoutPlanningService.companionProfile(
+                from: profile,
+                accountIdentifier: accountStore.appleUserID
+            ),
+            preservePlan: false
+        )
+        syncCoordinator.synchronizeIfPossible(
+            accountStore: accountStore,
+            profile: profile,
+            workouts: workouts,
+            context: context
+        )
 
         withAnimation(.spring(response: 0.3)) {
             showingSavedBanner = true
@@ -463,9 +559,7 @@ struct SettingsView: View {
 private extension View {
     func settingsCard() -> some View {
         self
-            .padding()
-            .background(Color.cardBackground)
-            .cornerRadius(16)
+            .appCard()
     }
 }
 

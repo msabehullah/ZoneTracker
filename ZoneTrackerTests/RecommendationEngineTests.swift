@@ -79,6 +79,17 @@ final class RecommendationEngineTests: XCTestCase {
         XCTAssertTrue(rec.sessionType.isInterval, "Should recommend interval after 2 Zone 2 sessions")
     }
 
+    func testPhase2DefersIntervalsOnLegDay() {
+        let profile = makeProfile(phase: .phase2)
+        profile.legDays = [Date().weekday]
+        let workouts = lastWeekFillers(phase: .phase2) + [
+            makeWorkoutInCurrentWeek(dayOffset: 0, sessionType: .zone2, phase: .phase2),
+            makeWorkoutInCurrentWeek(dayOffset: 1, sessionType: .zone2, phase: .phase2)
+        ]
+        let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
+        XCTAssertEqual(rec.sessionType, .zone2, "Leg day should defer high-intensity work")
+    }
+
     // MARK: - Consistency Check
 
     func testRepeatLastWorkoutWhenMissedSessions() {

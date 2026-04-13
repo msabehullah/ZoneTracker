@@ -4,10 +4,15 @@ import SwiftUI
 
 struct NextWorkoutCard: View {
     let recommendation: WorkoutRecommendation
-    var onStart: () -> Void
+    let plan: WorkoutExecutionPlan?
+    let watchStatus: String
+    var compact: Bool = false
+    var onSendToWatch: () -> Void
+    var secondaryTitle: String?
+    var onManualLog: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: recommendation.exerciseType.sfSymbol)
                     .font(.title2)
@@ -24,7 +29,7 @@ struct NextWorkoutCard: View {
                 adjustmentBadge
             }
 
-            Divider().overlay(Color.cardBorder)
+            watchStatusRow
 
             HStack(spacing: 20) {
                 metricPill(
@@ -56,24 +61,43 @@ struct NextWorkoutCard: View {
                 }
             }
 
-            Text(recommendation.reasoning)
-                .font(.caption)
-                .foregroundColor(.gray)
-                .lineLimit(3)
+            if !compact {
+                Text(recommendation.reasoning)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .lineLimit(1)
+            }
 
-            Button(action: onStart) {
-                Text("Start Workout")
-                    .font(.subheadline.bold())
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.zone2Green)
-                    .cornerRadius(10)
+            if !compact, let activeSegment = plan?.segments.first {
+                HStack(spacing: 8) {
+                    Image(systemName: activeSegment.kind == .steady ? "waveform.path.ecg" : "timer")
+                        .foregroundColor(.zone2Green)
+                        .font(.caption)
+                    Text(segmentSummary(activeSegment))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.82))
+                        .lineLimit(1)
+                }
+            }
+
+            if !compact, let secondaryTitle, let onManualLog {
+                HStack(spacing: 10) {
+                    primaryButton
+                    Button(action: onManualLog) {
+                        Text(secondaryTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.cardBorder)
+                            .cornerRadius(10)
+                    }
+                }
+            } else {
+                primaryButton
             }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard(padding: 14)
     }
 
     private var adjustmentBadge: some View {
@@ -113,5 +137,37 @@ struct NextWorkoutCard: View {
                 .font(.caption2)
                 .foregroundColor(.gray)
         }
+    }
+
+    private var primaryButton: some View {
+        Button(action: onSendToWatch) {
+            Text("Send to Apple Watch")
+                .font(.subheadline.bold())
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.zone2Green)
+                .cornerRadius(10)
+        }
+    }
+
+    private var watchStatusRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "applewatch")
+                .foregroundColor(.zone2Green)
+                .font(.caption)
+            Text(watchStatus)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .lineLimit(1)
+        }
+    }
+
+    private func segmentSummary(_ segment: WorkoutPlanSegment) -> String {
+        let durationText = segment.duration.minutesAndSeconds
+        if let target = segment.targetRange?.displayText {
+            return "\(segment.title) · \(durationText) · \(target)"
+        }
+        return "\(segment.title) · \(durationText)"
     }
 }

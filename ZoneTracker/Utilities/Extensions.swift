@@ -49,27 +49,6 @@ extension Date {
     }
 }
 
-// MARK: - TimeInterval Extensions
-
-extension TimeInterval {
-    var minutesAndSeconds: String {
-        let totalSeconds = Int(self)
-        let min = totalSeconds / 60
-        let sec = totalSeconds % 60
-        return String(format: "%d:%02d", min, sec)
-    }
-
-    var formattedDuration: String {
-        let totalSeconds = Int(self)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        }
-        return "\(minutes) min"
-    }
-}
-
 // MARK: - Int Extensions
 
 extension Int {
@@ -84,6 +63,19 @@ extension View {
             .padding()
             .background(Color(.systemGray6))
             .cornerRadius(16)
+    }
+
+    func appCard(cornerRadius: CGFloat = 18, padding: CGFloat = 16) -> some View {
+        self
+            .padding(padding)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(Color.cardBorder.opacity(0.9), lineWidth: 1)
+                    )
+            )
     }
 
     func monospaced() -> some View {

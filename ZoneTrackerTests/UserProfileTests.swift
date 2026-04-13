@@ -16,6 +16,8 @@ final class UserProfileTests: XCTestCase {
         XCTAssertFalse(profile.hasCompletedOnboarding)
         XCTAssertEqual(profile.phase, .phase1)
         XCTAssertTrue(profile.legDays.isEmpty)
+        XCTAssertTrue(profile.coachingHapticsEnabled)
+        XCTAssertEqual(profile.coachingAlertCooldownSeconds, 18)
     }
 
     // MARK: - Max HR Calculation
@@ -100,9 +102,19 @@ final class UserProfileTests: XCTestCase {
     // MARK: - Training Phase Properties
 
     func testPhaseMinimumWeeks() {
-        XCTAssertEqual(TrainingPhase.phase1.minimumWeeks, 5)
-        XCTAssertEqual(TrainingPhase.phase2.minimumWeeks, 5)
+        XCTAssertEqual(TrainingPhase.phase1.minimumWeeks, 6)
+        XCTAssertEqual(TrainingPhase.phase2.minimumWeeks, 6)
         XCTAssertEqual(TrainingPhase.phase3.minimumWeeks, 0)
+    }
+
+    func testShouldAvoidHighIntensityOnLegDayAndDayAfter() {
+        let profile = UserProfile()
+        let tuesday = nextWeekday(3)
+        let wednesday = Calendar.current.date(byAdding: .day, value: 1, to: tuesday)!
+        profile.legDays = [3]
+
+        XCTAssertTrue(profile.shouldAvoidHighIntensity(on: tuesday))
+        XCTAssertTrue(profile.shouldAvoidHighIntensity(on: wednesday))
     }
 
     func testPhaseTargetSessions() {

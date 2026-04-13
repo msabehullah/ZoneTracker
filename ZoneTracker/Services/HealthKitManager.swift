@@ -17,6 +17,10 @@ class HealthKitManager: ObservableObject {
         if let rhr = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) { types.insert(rhr) }
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(energy) }
         if let distance = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) { types.insert(distance) }
+        if let height = HKQuantityType.quantityType(forIdentifier: .height) { types.insert(height) }
+        if let bodyMass = HKQuantityType.quantityType(forIdentifier: .bodyMass) { types.insert(bodyMass) }
+        types.insert(HKObjectType.characteristicType(forIdentifier: .biologicalSex)!)
+        types.insert(HKObjectType.characteristicType(forIdentifier: .dateOfBirth)!)
         types.insert(HKObjectType.workoutType())
         return types
     }()
@@ -33,6 +37,59 @@ class HealthKitManager: ObservableObject {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         try await healthStore.requestAuthorization(toShare: writeTypes, read: readTypes)
         isAuthorized = true
+    }
+
+    // MARK: - User Characteristics
+
+    struct UserCharacteristics {
+        var age: Int?
+        var weightLbs: Double?
+        var heightInches: Double?
+        var biologicalSex: String? // "male", "female", "other"
+    }
+
+    func fetchUserCharacteristics() async -> UserCharacteristics {
+        var result = UserCharacteristics()
+
+        // Biological sex
+        if let sex = try? healthStore.biologicalSex().biologicalSex {
+            switch sex {
+            case .male: result.biologicalSex = "male"
+            case .female: result.biologicalSex = "female"
+            case .other: result.biologicalSex = "other"
+            default: break
+            }
+        }
+
+        // Age from date of birth
+        if let dob = try? healthStore.dateOfBirthComponents(),
+           let birthDate = Calendar.current.date(from: dob) {
+            let ageComponents = Calendar.current.dateComponents([.year], from: birthDate, to: Date())
+            result.age = ageComponents.year
+        }
+
+        // Height (most recent sample)
+        if let heightType = HKQuantityType.quantityType(forIdentifier: .height) {
+            result.heightInches = await fetchMostRecentQuantity(type: heightType, unit: .inch())
+        }
+
+        // Weight (most recent sample)
+        if let bodyMassType = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
+            result.weightLbs = await fetchMostRecentQuantity(type: bodyMassType, unit: .pound())
+        }
+
+        return result
+    }
+
+    private func fetchMostRecentQuantity(type: HKQuantityType, unit: HKUnit) async -> Double? {
+        await withCheckedContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                let value = (samples?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit)
+                continuation.resume(returning: value)
+            }
+            healthStore.execute(query)
+        }
     }
 
     // MARK: - Heart Rate Queries
@@ -111,6 +168,12 @@ class HealthKitManager: ObservableObject {
     // MARK: - Resting Heart Rate
 
     func fetchRestingHeartRate(days: Int = 30) async throws -> [(date: Date, bpm: Int)] {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-codex-seed-sample-data") {
+            return Self.debugRestingHeartRate(days: days)
+        }
+        #endif
+
         guard let rhrType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) else { return [] }
 
         let start = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
@@ -139,23 +202,43 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    #if DEBUG
+    nonisolated private static func debugRestingHeartRate(days: Int) -> [(date: Date, bpm: Int)] {
+        let baseline = [61, 61, 60, 60, 59, 59, 58, 58, 57, 57, 56, 56]
+        let start = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+        let step = max(1, days / max(baseline.count - 1, 1))
+
+        return baseline.enumerated().map { index, bpm in
+            let date = Calendar.current.date(byAdding: .day, value: index * step, to: start) ?? start
+            return (date: date, bpm: bpm)
+        }
+    }
+    #endif
+
     // MARK: - Write Workout
 
     func saveWorkout(entry: WorkoutEntry) async throws {
-        let workoutConfig = HKWorkoutConfiguration()
-        workoutConfig.activityType = activityType(for: entry.exerciseType)
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = Self.activityType(for: entry.exerciseType)
+        configuration.locationType = Self.locationType(for: entry.exerciseType)
 
-        let workout = HKWorkout(
-            activityType: activityType(for: entry.exerciseType),
-            start: entry.date.addingTimeInterval(-entry.duration),
-            end: entry.date,
-            duration: entry.duration,
-            totalEnergyBurned: nil,
-            totalDistance: nil,
-            metadata: ["ZoneTracker": true]
+        let builder = HKWorkoutBuilder(
+            healthStore: healthStore,
+            configuration: configuration,
+            device: nil
         )
+        let startDate = entry.date.addingTimeInterval(-entry.duration)
 
-        try await healthStore.save(workout)
+        try await beginCollection(for: builder, at: startDate)
+        try await addMetadata(
+            [
+                "ZoneTracker": true,
+                HKMetadataKeyIndoorWorkout: entry.exerciseType == .treadmill
+            ],
+            to: builder
+        )
+        try await endCollection(for: builder, at: entry.date)
+        _ = try await finishWorkout(for: builder)
     }
 
     // MARK: - Latest Workout
@@ -179,7 +262,10 @@ class HealthKitManager: ObservableObject {
                     return
                 }
 
-                let exerciseType = self.mapActivityType(workout.workoutActivityType)
+                let exerciseType = Self.mapActivityType(
+                    workout.workoutActivityType,
+                    metadata: workout.metadata
+                )
                 continuation.resume(returning: (start: workout.startDate, end: workout.endDate, type: exerciseType))
             }
             healthStore.execute(query)
@@ -188,7 +274,7 @@ class HealthKitManager: ObservableObject {
 
     // MARK: - Helpers
 
-    private func activityType(for exerciseType: ExerciseType) -> HKWorkoutActivityType {
+    nonisolated private static func activityType(for exerciseType: ExerciseType) -> HKWorkoutActivityType {
         switch exerciseType {
         case .treadmill: return .running
         case .elliptical: return .elliptical
@@ -200,15 +286,91 @@ class HealthKitManager: ObservableObject {
         }
     }
 
-    private func mapActivityType(_ type: HKWorkoutActivityType) -> ExerciseType {
+    nonisolated private static func locationType(for exerciseType: ExerciseType) -> HKWorkoutSessionLocationType {
+        switch exerciseType {
+        case .treadmill:
+            return .indoor
+        case .outdoorRun, .rucking:
+            return .outdoor
+        default:
+            return .unknown
+        }
+    }
+
+    nonisolated private static func mapActivityType(
+        _ type: HKWorkoutActivityType,
+        metadata: [String: Any]? = nil
+    ) -> ExerciseType {
         switch type {
-        case .running: return .treadmill
+        case .running:
+            if let indoor = metadata?[HKMetadataKeyIndoorWorkout] as? Bool, indoor {
+                return .treadmill
+            }
+            return .outdoorRun
+        case .walking:
+            return .outdoorRun
         case .elliptical: return .elliptical
         case .stairClimbing: return .stairClimber
         case .cycling: return .bike
         case .rowing: return .rowing
         case .hiking: return .rucking
         default: return .treadmill
+        }
+    }
+
+    private func beginCollection(for builder: HKWorkoutBuilder, at startDate: Date) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.beginCollection(withStart: startDate) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ZoneTracker.HealthKit", code: 1))
+                }
+            }
+        }
+    }
+
+    private func addMetadata(_ metadata: [String: Any], to builder: HKWorkoutBuilder) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.addMetadata(metadata) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ZoneTracker.HealthKit", code: 2))
+                }
+            }
+        }
+    }
+
+    private func endCollection(for builder: HKWorkoutBuilder, at endDate: Date) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.endCollection(withEnd: endDate) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume(returning: ())
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ZoneTracker.HealthKit", code: 3))
+                }
+            }
+        }
+    }
+
+    private func finishWorkout(for builder: HKWorkoutBuilder) async throws -> HKWorkout {
+        try await withCheckedThrowingContinuation { continuation in
+            builder.finishWorkout { workout, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let workout {
+                    continuation.resume(returning: workout)
+                } else {
+                    continuation.resume(throwing: NSError(domain: "ZoneTracker.HealthKit", code: 4))
+                }
+            }
         }
     }
 }

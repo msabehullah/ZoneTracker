@@ -6,7 +6,7 @@ import Foundation
 @Observable
 class ProgressViewModel {
     var restingHRHistory: [(date: Date, bpm: Int)] = []
-    var paceAt150History: [(date: Date, speed: Double)] = []
+    var paceInTargetHistory: [(date: Date, speed: Double)] = []
     var mileTimeHistory: [(date: Date, seconds: TimeInterval)] = []
     var recoveryHRHistory: [(date: Date, drop: Int)] = []
     var phaseTimeline: [(phase: TrainingPhase, startDate: Date, endDate: Date?)] = []
@@ -21,13 +21,15 @@ class ProgressViewModel {
             restingHRHistory = []
         }
 
-        // Pace at 150 bpm — from treadmill Zone 2 workouts
-        paceAt150History = workouts
+        // Pace in the user's target range — from treadmill Zone 2 workouts
+        paceInTargetHistory = workouts
             .filter { $0.exerciseType == .treadmill && $0.sessionType == .zone2 }
             .sorted { $0.date < $1.date }
             .compactMap { workout in
                 let avgHR = workout.heartRateData.avgHR
-                guard avgHR > 0, let speed = workout.metrics["speed"], (145...155).contains(avgHR) else {
+                guard avgHR > 0,
+                      let speed = workout.metrics["speed"],
+                      profile.zone2Range.contains(avgHR) else {
                     return nil
                 }
                 return (date: workout.date, speed: speed)

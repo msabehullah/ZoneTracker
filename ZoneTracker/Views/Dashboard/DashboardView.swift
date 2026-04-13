@@ -9,13 +9,15 @@ struct DashboardView: View {
     let profile: UserProfile
 
     @State private var viewModel = DashboardViewModel()
+    @State private var connectivity = ConnectivityManager.shared
     @State private var showingLogWorkout = false
     @State private var showPhaseTransition = false
+    @State private var deliveryBanner: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     phaseHeader
                     nextWorkoutCard
                     weekProgressView
@@ -23,10 +25,12 @@ struct DashboardView: View {
                     restingHRSparkline
                 }
                 .padding(.horizontal)
-                .padding(.bottom, 20)
+                .padding(.bottom, 28)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(Color.appBackground)
             .navigationTitle("Dashboard")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .sheet(isPresented: $showingLogWorkout) {
                 LogWorkoutView(profile: profile, recommendation: viewModel.nextRecommendation)
@@ -48,18 +52,32 @@ struct DashboardView: View {
                     showPhaseTransition = true
                 }
             }
+            .overlay(alignment: .top) {
+                if let deliveryBanner {
+                    Text(deliveryBanner)
+                        .font(.caption.bold())
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(Color.zone2Green)
+                        .clipShape(Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
     // MARK: - Phase Header
 
     private var phaseHeader: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile.phase.displayName)
-                        .font(.system(.title2, design: .rounded).bold())
+                        .font(.system(.title3, design: .rounded).bold())
                         .foregroundColor(.white)
                     Text(profile.phase.subtitle)
                         .font(.subheadline)
@@ -76,17 +94,15 @@ struct DashboardView: View {
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(Color.cardBorder)
-                        .frame(height: 6)
+                        .frame(height: 5)
                     Capsule()
                         .fill(Color.zone2Green)
-                        .frame(width: phaseProgress(geo.size.width), height: 6)
+                        .frame(width: phaseProgress(geo.size.width), height: 5)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 5)
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard(padding: 12)
     }
 
     private func phaseProgress(_ totalWidth: CGFloat) -> CGFloat {
@@ -98,73 +114,25 @@ struct DashboardView: View {
     // MARK: - Next Workout Card
 
     private var nextWorkoutCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Next Workout")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                if let rec = viewModel.nextRecommendation {
-                    Image(systemName: rec.exerciseType.sfSymbol)
-                        .font(.title2)
-                        .foregroundColor(.zone2Green)
-                }
-            }
+        Group {
+            if let recommendation = viewModel.nextRecommendation {
+                VStack(alignment: .trailing, spacing: 8) {
+                    NextWorkoutCard(
+                        recommendation: recommendation,
+                        plan: viewModel.currentPlan,
+                        watchStatus: watchStatusText,
+                        compact: true,
+                        onSendToWatch: sendPlanToWatch
+                    )
 
-            if let rec = viewModel.nextRecommendation {
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(rec.sessionType.displayName)
-                            .font(.system(.subheadline, design: .monospaced))
-                            .foregroundColor(.zone2Green)
-                        Text(rec.exerciseType.displayName)
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                    Button("Log Manually") {
+                        showingLogWorkout = true
                     }
-                    Divider().frame(height: 30)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(rec.targetDurationMinutes) min")
-                            .font(.system(.subheadline, design: .monospaced))
-                            .foregroundColor(.white)
-                        Text("\(rec.targetHRLow)–\(rec.targetHRHigh) bpm")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                if !rec.suggestedMetrics.isEmpty {
-                    Text(rec.formattedMetrics)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.8))
-                }
-
-                if let proto = rec.intervalProtocol {
-                    Text(proto.description)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.orange)
-                }
-
-                Text(rec.reasoning)
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .lineLimit(3)
-
-                Button {
-                    showingLogWorkout = true
-                } label: {
-                    Text("Start Workout")
-                        .font(.subheadline.bold())
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.zone2Green)
-                        .cornerRadius(10)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.zone2Green)
                 }
             }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
     }
 
     // MARK: - Week Progress
@@ -196,9 +164,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard()
     }
 
     // MARK: - Quick Stats
@@ -219,16 +185,15 @@ struct DashboardView: View {
             Text(value)
                 .font(.system(.title2, design: .monospaced).bold())
                 .foregroundColor(.white)
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-            }
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(subtitle.isEmpty ? " " : subtitle)
+                .font(.caption2)
+                .foregroundColor(.gray.opacity(subtitle.isEmpty ? 0 : 1))
+                .frame(height: 14)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .appCard(cornerRadius: 14, padding: 12)
     }
 
     // MARK: - Resting HR Sparkline
@@ -251,13 +216,52 @@ struct DashboardView: View {
                 RestingHRSparkline(data: viewModel.restingHRData)
                     .frame(height: 50)
             } else {
-                Text("Resting HR data will appear here from your Apple Watch.")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+                InlineEmptyState(
+                    systemImage: "heart.circle.fill",
+                    message: "Resting HR data from your Apple Watch will appear here.",
+                    minHeight: 78
+                )
             }
         }
-        .padding()
-        .background(Color.cardBackground)
-        .cornerRadius(16)
+        .appCard()
+    }
+
+    private var watchStatusText: String {
+        if !connectivity.isWatchAppInstalled {
+            return "Watch app not installed"
+        }
+        if connectivity.lastSentPlanIdentifier == viewModel.currentPlan?.id {
+            return "Already on your watch"
+        }
+        if connectivity.isReachable {
+            return "Watch connected and ready"
+        }
+        if connectivity.isPaired {
+            return "Queued for watch delivery"
+        }
+        return "Pair Apple Watch for coaching"
+    }
+
+    private func sendPlanToWatch() {
+        viewModel.sendPlanToWatch(profile: profile)
+        let message: String
+        if connectivity.isReachable {
+            message = "Plan sent to Apple Watch"
+        } else if connectivity.isWatchAppInstalled {
+            message = "Plan queued for Apple Watch delivery"
+        } else {
+            message = "Watch plan updated in the companion flow"
+        }
+
+        withAnimation(.spring(response: 0.3)) {
+            deliveryBanner = message
+        }
+
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                deliveryBanner = nil
+            }
+        }
     }
 }

@@ -12,14 +12,11 @@ struct ZoneTrackerWatchApp: App {
             }
             .environmentObject(workoutManager)
             .environmentObject(connectivity)
-            .onChange(of: connectivity.zone2Low) { _, newValue in
-                workoutManager.zone2Low = newValue
+            .onAppear {
+                workoutManager.updateCompanionProfile(connectivity.companionProfile)
             }
-            .onChange(of: connectivity.zone2High) { _, newValue in
-                workoutManager.zone2High = newValue
-            }
-            .onChange(of: connectivity.maxHR) { _, newValue in
-                workoutManager.userMaxHR = newValue
+            .onChange(of: connectivity.companionProfile) { _, newValue in
+                workoutManager.updateCompanionProfile(newValue)
             }
         }
     }
