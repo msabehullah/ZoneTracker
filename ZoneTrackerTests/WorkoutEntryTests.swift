@@ -149,6 +149,41 @@ final class WorkoutEntryTests: XCTestCase {
         XCTAssertEqual(entry.phaseRaw, "phase2")
     }
 
+    // MARK: - Focus Round-Trip
+
+    func testFocusDefaultsFromPhase() {
+        let entry = makeWorkout()
+        XCTAssertEqual(entry.focus, .buildingBase, "Default phase1 should map to buildingBase")
+    }
+
+    func testFocusExplicitActiveRecovery() {
+        let entry = WorkoutEntry(
+            exerciseType: .treadmill,
+            duration: 30 * 60,
+            metrics: [:],
+            sessionType: .zone2,
+            heartRateData: .empty,
+            phase: .phase1,
+            focus: .activeRecovery,
+            weekNumber: 1
+        )
+        XCTAssertEqual(entry.focus, .activeRecovery, "Explicit activeRecovery should be preserved")
+        XCTAssertEqual(entry.focusRaw, "activeRecovery")
+    }
+
+    func testFocusMutation() {
+        let entry = makeWorkout()
+        entry.focus = .peakPerformance
+        XCTAssertEqual(entry.focus, .peakPerformance)
+        XCTAssertEqual(entry.focusRaw, "peakPerformance")
+    }
+
+    func testLegacyWorkoutWithEmptyFocusRawFallsBackToPhase() {
+        let entry = makeWorkout()
+        entry.focusRaw = ""
+        XCTAssertEqual(entry.focus, .buildingBase, "Empty focusRaw should fall back to phase.toFocus")
+    }
+
     // MARK: - Helpers
 
     private func makeWorkout(

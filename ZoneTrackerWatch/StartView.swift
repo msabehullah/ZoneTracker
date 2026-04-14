@@ -29,7 +29,7 @@ struct StartView: View {
                         waitingForPlanCard
                     }
 
-                    Text("Free Workout")
+                    Text("Quick Start")
                         .font(.system(.caption, design: .rounded).bold())
                         .foregroundColor(.gray)
                         .padding(.top, 4)
@@ -52,8 +52,8 @@ struct StartView: View {
                                         .foregroundColor(.white)
                                         .lineLimit(2)
                                         .fixedSize(horizontal: false, vertical: true)
-                                    if let zone2 = connectivity.companionProfile?.zone2TargetRange.displayText {
-                                        Text(zone2)
+                                    if let target = connectivity.companionProfile?.targetZoneRange.displayText {
+                                        Text(target)
                                             .font(.system(size: 11, design: .monospaced))
                                             .foregroundColor(.gray)
                                             .lineLimit(1)
@@ -111,7 +111,7 @@ struct StartView: View {
                 .font(.system(.headline, design: .rounded))
                 .foregroundColor(.green)
             if let companionProfile = connectivity.companionProfile {
-                Text(companionProfile.phase.displayName)
+                Text(companionProfile.focus.displayName)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundColor(.gray)
             } else {
@@ -204,8 +204,8 @@ struct StartView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.white)
                 .fixedSize(horizontal: false, vertical: true)
-            if let zone2 = connectivity.companionProfile?.zone2TargetRange.displayText {
-                Text("Free workouts will use \(zone2)")
+            if let target = connectivity.companionProfile?.targetZoneRange.displayText {
+                Text("Quick start will use \(target)")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.green)
                     .lineLimit(2)

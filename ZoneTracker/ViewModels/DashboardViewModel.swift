@@ -16,12 +16,22 @@ class DashboardViewModel {
     var currentStreak: Int = 0
     var bestMileTime: String = "—"
     var restingHRData: [(date: Date, bpm: Int)] = []
-    var phaseTransitionMessage: String?
+    var focusTransitionMessage: String?
 
     private let healthKit = HealthKitManager.shared
 
     func load(profile: UserProfile, workouts: [WorkoutEntry]) {
-        // Generate recommendation
+        // Check for focus transition first (does not mutate profile)
+        if let transition = PhaseManager.evaluatePhaseTransition(
+            profile: profile, workouts: workouts
+        ) {
+            PhaseManager.applyTransition(transition, to: profile)
+            focusTransitionMessage = transition.message
+        } else {
+            focusTransitionMessage = nil
+        }
+
+        // Generate recommendation (now reflects any transition that just occurred)
         nextRecommendation = RecommendationEngine.recommend(profile: profile, workouts: workouts)
         currentPlan = nextRecommendation.map {
             WorkoutPlanningService.plan(
@@ -33,7 +43,7 @@ class DashboardViewModel {
 
         // Session counts
         sessionsThisWeek = workouts.inCurrentWeek().count
-        targetSessionsThisWeek = profile.phase.targetSessionsPerWeek
+        targetSessionsThisWeek = profile.effectiveSessionsPerWeek
         totalSessions = workouts.count
 
         // Streak
@@ -41,11 +51,6 @@ class DashboardViewModel {
 
         // Best mile time
         bestMileTime = findBestMileTime(workouts: workouts)
-
-        // Phase transition check
-        phaseTransitionMessage = PhaseManager.evaluatePhaseTransition(
-            profile: profile, workouts: workouts
-        )
 
         // Update widget data
         updateWidgetData(profile: profile)
@@ -83,11 +88,11 @@ class DashboardViewModel {
 
     private func updateWidgetData(profile: UserProfile) {
         let defaults = UserDefaults(suiteName: "group.com.zonetracker.app")
-        defaults?.set(profile.phase.displayName, forKey: "widget_phase")
+        defaults?.set(profile.focus.displayName, forKey: "widget_phase")
         defaults?.set(profile.weekNumber, forKey: "widget_weekNumber")
         defaults?.set(sessionsThisWeek, forKey: "widget_sessionsThisWeek")
         defaults?.set(targetSessionsThisWeek, forKey: "widget_targetSessions")
-        defaults?.set(nextRecommendation?.sessionType.displayName ?? "Zone 2", forKey: "widget_nextSessionType")
+        defaults?.set(nextRecommendation?.sessionType.displayName ?? "Target Zone", forKey: "widget_nextSessionType")
         defaults?.set(nextRecommendation?.targetDurationMinutes ?? 30, forKey: "widget_nextDuration")
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -108,7 +113,6 @@ class DashboardViewModel {
         var streak = 0
         var checkDate = Date().startOfWeek
 
-        // Check each week backwards — did they have at least 1 session?
         while true {
             let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: checkDate) ?? checkDate
             let hasWorkout = sorted.contains { $0.date >= checkDate && $0.date < weekEnd }

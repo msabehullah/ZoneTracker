@@ -25,7 +25,35 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     @Published var summaryCalories: Double = 0
     @Published var summaryDuration: TimeInterval = 0
     @Published var summaryTimeInTarget: TimeInterval = 0
-    @Published var summaryTargetLabel: String = "On Target"
+    @Published var summaryTargetLabel: String = "Time on Target"
+
+    // Coaching display properties
+    var coachingMessage: String {
+        switch coachingPosition {
+        case .belowTarget: return "Push Harder"
+        case .inTarget: return "Perfect Pace"
+        case .aboveTarget: return "Ease Up"
+        case .unavailable: return "Warming Up"
+        }
+    }
+
+    var zoneBadge: String {
+        guard heartRate > 0 else { return "—" }
+        return "Z\(currentZone)"
+    }
+
+    var adherencePercent: Int {
+        guard elapsedTime > 0 else { return 0 }
+        return min(100, Int((timeInActiveTarget / elapsedTime) * 100))
+    }
+
+    var formattedElapsed: String {
+        elapsedTime.minutesAndSeconds
+    }
+
+    var formattedTimeOnTarget: String {
+        timeInActiveTarget.minutesAndSeconds
+    }
 
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
@@ -173,7 +201,7 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         summaryMaxHR = heartRateData.maxHR
         summaryCalories = activeCalories
         summaryTimeInTarget = telemetry.timeInTarget
-        summaryTargetLabel = activePlan?.sessionType.isInterval == true ? "Time on Target" : "Zone 2 Time"
+        summaryTargetLabel = "Time on Target"
     }
 
     private func sendCompletionPayload(endDate: Date) {
@@ -310,16 +338,16 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
             segments: [
                 WorkoutPlanSegment(
                     id: "steady",
-                    title: "Free Zone 2",
+                    title: "Free Workout",
                     kind: .steady,
                     startOffset: 0,
                     duration: 30 * 60,
                     targetRange: targetRange,
-                    cue: "Stay steady in your target range."
+                    cue: "Stay steady in your target zone."
                 )
             ],
             coachingPreferences: companionProfile.coachingPreferences,
-            rationale: "Free workout using your current Zone 2 settings.",
+            rationale: "Free workout using your current target zone settings.",
             isFreeWorkout: true
         )
     }

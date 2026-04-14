@@ -7,18 +7,19 @@ struct LiveWorkoutView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             GeometryReader { geometry in
-                let metrics = LiveWorkoutLayoutMetrics(size: geometry.size)
+                let m = LiveWorkoutLayoutMetrics(size: geometry.size)
 
-                VStack(spacing: metrics.contentSpacing) {
-                    statusHeader(metrics: metrics)
-                    targetRing(metrics: metrics)
-                    metricsRow(metrics: metrics)
-                    controlButtons(metrics: metrics)
+                VStack(spacing: m.sectionSpacing) {
+                    coachingBanner(m: m)
+                    heartRateHero(m: m)
+                    adherenceBar(m: m)
+                    statsRow(m: m)
+                    controlButtons(m: m)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.horizontal, metrics.horizontalPadding)
-                .padding(.top, metrics.topPadding)
-                .padding(.bottom, metrics.bottomPadding)
+                .padding(.horizontal, m.horizontalPadding)
+                .padding(.top, m.topPadding)
+                .padding(.bottom, m.bottomPadding)
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -31,96 +32,143 @@ struct LiveWorkoutView: View {
         }
     }
 
-    private func statusHeader(metrics: LiveWorkoutLayoutMetrics) -> some View {
-        VStack(spacing: metrics.headerSpacing) {
-            Text(manager.activeSegmentTitle)
-                .font(.system(size: metrics.segmentTitleSize, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
+    // MARK: - Coaching Banner
+
+    private func coachingBanner(m: LiveWorkoutLayoutMetrics) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: m.statusDotSize, height: m.statusDotSize)
+
+            Text(manager.coachingMessage)
+                .font(.system(size: m.coachingTextSize, weight: .bold, design: .rounded))
+                .foregroundColor(statusColor)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(0.7)
 
-            if metrics.usesInlineStatusRow {
-                HStack(spacing: 6) {
-                    Text(manager.activeTargetText)
-                        .font(.system(size: metrics.targetTextSize, weight: .medium, design: .monospaced))
-                        .foregroundColor(.green)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
+            Spacer(minLength: 4)
 
-                    Spacer(minLength: 4)
-
-                    Text(manager.coachingPosition.shortLabel)
-                        .font(.system(size: metrics.statusTextSize, weight: .bold, design: .rounded))
-                        .foregroundColor(statusColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
-                }
-            } else {
-                Text(manager.activeTargetText)
-                    .font(.system(size: metrics.targetTextSize, weight: .medium, design: .monospaced))
-                    .foregroundColor(.green)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-
-                Text(manager.coachingPosition.shortLabel)
-                    .font(.system(size: metrics.statusTextSize, weight: .bold, design: .rounded))
-                    .foregroundColor(statusColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
+            Text(manager.zoneBadge)
+                .font(.system(size: m.zoneBadgeTextSize, weight: .heavy, design: .monospaced))
+                .foregroundColor(statusColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(statusColor.opacity(0.18))
+                .clipShape(Capsule())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func targetRing(metrics: LiveWorkoutLayoutMetrics) -> some View {
-        ZStack {
-            Circle()
-                .stroke(Color.gray.opacity(0.25), lineWidth: metrics.ringLineWidth)
+    // MARK: - Heart Rate Hero
 
-            Circle()
-                .trim(from: 0, to: targetFraction)
-                .stroke(
-                    Color.green,
-                    style: StrokeStyle(lineWidth: metrics.ringLineWidth, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-                .animation(.easeInOut(duration: 0.4), value: targetFraction)
-
-            VStack(spacing: metrics.ringTextSpacing) {
+    private func heartRateHero(m: LiveWorkoutLayoutMetrics) -> some View {
+        VStack(spacing: m.heroSpacing) {
+            // Heart rate number — the dominant element
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text("\(manager.heartRate)")
-                    .font(.system(size: metrics.heartRateSize, weight: .bold, design: .rounded))
+                    .font(.system(size: m.heartRateSize, weight: .bold, design: .rounded))
                     .foregroundColor(statusColor)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
 
-                Text(formattedTime)
-                    .font(.system(size: metrics.timeTextSize, weight: .medium, design: .monospaced))
-                    .foregroundColor(.gray)
-                    .lineLimit(1)
+                Text("bpm")
+                    .font(.system(size: m.bpmLabelSize, weight: .medium, design: .rounded))
+                    .foregroundColor(statusColor.opacity(0.6))
+            }
 
-                Text(manager.workoutTitle)
-                    .font(.system(size: metrics.workoutTitleSize))
+            // Target range + segment
+            HStack(spacing: 6) {
+                Text(manager.activeTargetText)
+                    .font(.system(size: m.targetTextSize, weight: .medium, design: .monospaced))
                     .foregroundColor(.gray)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
+
+                if m.showsSegmentInline {
+                    Text("·")
+                        .foregroundColor(.gray.opacity(0.5))
+                    Text(manager.activeSegmentTitle)
+                        .font(.system(size: m.targetTextSize, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
             }
-            .padding(.horizontal, metrics.ringInnerPadding)
-        }
-        .frame(width: metrics.ringSize, height: metrics.ringSize)
-        .frame(maxWidth: .infinity)
-    }
-
-    private func metricsRow(metrics: LiveWorkoutLayoutMetrics) -> some View {
-        HStack(spacing: metrics.metricSpacing) {
-            metricColumn(title: "AVG", value: "\(manager.averageHR)", color: .white, metrics: metrics)
-            metricColumn(title: "MAX", value: "\(manager.maxHR)", color: .orange, metrics: metrics)
-            metricColumn(title: "ON", value: onTargetTime, color: .green, metrics: metrics)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func controlButtons(metrics: LiveWorkoutLayoutMetrics) -> some View {
-        HStack(spacing: metrics.buttonSpacing) {
+    // MARK: - Adherence Bar
+
+    private func adherenceBar(m: LiveWorkoutLayoutMetrics) -> some View {
+        VStack(spacing: m.adherenceSpacing) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.gray.opacity(0.25))
+                        .frame(height: m.adherenceBarHeight)
+                    Capsule()
+                        .fill(statusColor)
+                        .frame(
+                            width: max(0, geo.size.width * adherenceFraction),
+                            height: m.adherenceBarHeight
+                        )
+                        .animation(.easeInOut(duration: 0.5), value: adherenceFraction)
+                }
+            }
+            .frame(height: m.adherenceBarHeight)
+
+            HStack {
+                Text(manager.formattedElapsed)
+                    .font(.system(size: m.timeTextSize, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.8))
+
+                Spacer()
+
+                Text("\(manager.adherencePercent)% on target")
+                    .font(.system(size: m.timeTextSize, weight: .medium, design: .monospaced))
+                    .foregroundColor(statusColor.opacity(0.8))
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Stats Row
+
+    private func statsRow(m: LiveWorkoutLayoutMetrics) -> some View {
+        HStack(spacing: m.metricSpacing) {
+            metricColumn(title: "AVG", value: "\(manager.averageHR)", color: .white, m: m)
+            metricColumn(title: "MAX", value: "\(manager.maxHR)", color: .orange, m: m)
+            metricColumn(title: "CAL", value: "\(Int(manager.activeCalories))", color: .white, m: m)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func metricColumn(
+        title: String,
+        value: String,
+        color: Color,
+        m: LiveWorkoutLayoutMetrics
+    ) -> some View {
+        VStack(spacing: m.metricTextSpacing) {
+            Text(title)
+                .font(.system(size: m.metricTitleSize, weight: .medium, design: .rounded))
+                .foregroundColor(.gray)
+
+            Text(value)
+                .font(.system(size: m.metricValueSize, weight: .semibold, design: .monospaced))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Controls
+
+    private func controlButtons(m: LiveWorkoutLayoutMetrics) -> some View {
+        HStack(spacing: m.buttonSpacing) {
             if manager.sessionState == .running {
                 Button {
                     manager.pause()
@@ -129,7 +177,7 @@ struct LiveWorkoutView: View {
                         "pause.fill",
                         foreground: .yellow,
                         background: Color.yellow.opacity(0.2),
-                        metrics: metrics
+                        m: m
                     )
                 }
                 .buttonStyle(.plain)
@@ -141,7 +189,7 @@ struct LiveWorkoutView: View {
                         "play.fill",
                         foreground: .green,
                         background: Color.green.opacity(0.2),
-                        metrics: metrics
+                        m: m
                     )
                 }
                 .buttonStyle(.plain)
@@ -154,30 +202,10 @@ struct LiveWorkoutView: View {
                     "xmark",
                     foreground: .red,
                     background: Color.red.opacity(0.2),
-                    metrics: metrics
+                    m: m
                 )
             }
             .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func metricColumn(
-        title: String,
-        value: String,
-        color: Color,
-        metrics: LiveWorkoutLayoutMetrics
-    ) -> some View {
-        VStack(spacing: metrics.metricTextSpacing) {
-            Text(title)
-                .font(.system(size: metrics.metricTitleSize, weight: .medium, design: .rounded))
-                .foregroundColor(.gray)
-
-            Text(value)
-                .font(.system(size: metrics.metricValueSize, weight: .semibold, design: .monospaced))
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
         }
         .frame(maxWidth: .infinity)
     }
@@ -186,27 +214,21 @@ struct LiveWorkoutView: View {
         _ systemName: String,
         foreground: Color,
         background: Color,
-        metrics: LiveWorkoutLayoutMetrics
+        m: LiveWorkoutLayoutMetrics
     ) -> some View {
         Image(systemName: systemName)
-            .font(metrics.buttonIconFont)
+            .font(m.buttonIconFont)
             .foregroundColor(foreground)
-            .frame(width: metrics.buttonSize, height: metrics.buttonSize)
+            .frame(width: m.buttonSize, height: m.buttonSize)
             .background(background)
             .clipShape(Circle())
     }
 
-    private var targetFraction: CGFloat {
+    // MARK: - Computed
+
+    private var adherenceFraction: CGFloat {
         guard manager.elapsedTime > 0 else { return 0 }
         return min(1.0, manager.timeInActiveTarget / manager.elapsedTime)
-    }
-
-    private var onTargetTime: String {
-        manager.timeInActiveTarget.minutesAndSeconds
-    }
-
-    private var formattedTime: String {
-        manager.elapsedTime.minutesAndSeconds
     }
 
     private var statusColor: Color {
@@ -219,27 +241,38 @@ struct LiveWorkoutView: View {
     }
 }
 
+// MARK: - Layout Metrics
+
 private struct LiveWorkoutLayoutMetrics {
     let horizontalPadding: CGFloat
     let topPadding: CGFloat
     let bottomPadding: CGFloat
-    let contentSpacing: CGFloat
-    let headerSpacing: CGFloat
-    let usesInlineStatusRow: Bool
-    let segmentTitleSize: CGFloat
-    let targetTextSize: CGFloat
-    let statusTextSize: CGFloat
-    let ringSize: CGFloat
-    let ringLineWidth: CGFloat
-    let ringInnerPadding: CGFloat
-    let ringTextSpacing: CGFloat
+    let sectionSpacing: CGFloat
+    let showsSegmentInline: Bool
+
+    // Coaching banner
+    let statusDotSize: CGFloat
+    let coachingTextSize: CGFloat
+    let zoneBadgeTextSize: CGFloat
+
+    // Heart rate hero
     let heartRateSize: CGFloat
+    let bpmLabelSize: CGFloat
+    let heroSpacing: CGFloat
+    let targetTextSize: CGFloat
+
+    // Adherence
+    let adherenceBarHeight: CGFloat
+    let adherenceSpacing: CGFloat
     let timeTextSize: CGFloat
-    let workoutTitleSize: CGFloat
+
+    // Stats
     let metricSpacing: CGFloat
     let metricTextSpacing: CGFloat
     let metricTitleSize: CGFloat
     let metricValueSize: CGFloat
+
+    // Controls
     let buttonSize: CGFloat
     let buttonSpacing: CGFloat
     let buttonIconFont: Font
@@ -248,50 +281,40 @@ private struct LiveWorkoutLayoutMetrics {
         let width = max(size.width, 136)
         let height = max(size.height, 170)
         let scale = min(max(min(width / 184, height / 224), 0.72), 1.18)
-        let compactViewport = width < 176 || height < 212
+        let compact = width < 176 || height < 212
 
-        horizontalPadding = compactViewport ? max(6, 8 * scale) : max(8, 10 * scale)
-        topPadding = compactViewport ? max(4, 5 * scale) : max(6, 7 * scale)
-        bottomPadding = compactViewport ? max(2, 3 * scale) : max(4, 5 * scale)
-        contentSpacing = compactViewport ? max(3, 4 * scale) : max(5, 6 * scale)
-        headerSpacing = compactViewport ? 1 : 2
-        usesInlineStatusRow = compactViewport
+        horizontalPadding = compact ? max(6, 8 * scale) : max(8, 10 * scale)
+        topPadding = compact ? max(4, 5 * scale) : max(6, 7 * scale)
+        bottomPadding = compact ? max(2, 3 * scale) : max(4, 5 * scale)
+        sectionSpacing = compact ? max(3, 4 * scale) : max(5, 6 * scale)
+        showsSegmentInline = !compact
 
-        segmentTitleSize = max(11, 13 * scale)
+        // Coaching banner
+        statusDotSize = max(6, 8 * scale)
+        coachingTextSize = max(10, 12 * scale)
+        zoneBadgeTextSize = max(9, 11 * scale)
+
+        // Heart rate — the hero element, as large as possible
+        heartRateSize = compact ? max(36, 48 * scale) : max(44, 56 * scale)
+        bpmLabelSize = max(10, 13 * scale)
+        heroSpacing = compact ? 1 : 2
         targetTextSize = max(10, 11.5 * scale)
-        statusTextSize = max(10, 11.5 * scale)
 
-        metricSpacing = compactViewport ? max(4, 5 * scale) : max(8, 9 * scale)
-        metricTextSpacing = compactViewport ? 0 : 1
+        // Adherence bar
+        adherenceBarHeight = max(4, 5 * scale)
+        adherenceSpacing = compact ? 2 : 3
+        timeTextSize = max(9, 10.5 * scale)
+
+        // Stats row
+        metricSpacing = compact ? max(4, 5 * scale) : max(8, 9 * scale)
+        metricTextSpacing = compact ? 0 : 1
         metricTitleSize = max(7, 8.5 * scale)
         metricValueSize = max(10, 14 * scale)
 
-        buttonSize = compactViewport ? max(28, 34 * scale) : max(34, 40 * scale)
-        buttonSpacing = compactViewport ? max(8, 10 * scale) : max(12, 14 * scale)
-
-        let headerHeight = usesInlineStatusRow
-            ? segmentTitleSize + max(targetTextSize, statusTextSize) + headerSpacing + 8
-            : segmentTitleSize + targetTextSize + statusTextSize + (headerSpacing * 2) + 12
-        let metricsHeight = metricTitleSize + metricValueSize + metricTextSpacing + 8
-        let controlsHeight = buttonSize
-        let verticalBudget = height
-            - topPadding
-            - bottomPadding
-            - headerHeight
-            - metricsHeight
-            - controlsHeight
-            - (contentSpacing * 3)
-        let horizontalBudget = width - (horizontalPadding * 2)
-
-        ringSize = max(52, min(horizontalBudget, verticalBudget))
-
-        let ringScale = min(max(ringSize / 102, 0.68), 1.16)
-        ringLineWidth = compactViewport ? max(5, 6 * ringScale) : max(6, 7 * ringScale)
-        ringInnerPadding = max(6, 8 * ringScale)
-        ringTextSpacing = ringScale < 0.82 ? 0 : 1
-        heartRateSize = max(24, 36 * ringScale)
-        timeTextSize = max(10, 12 * ringScale)
-        workoutTitleSize = max(9, 10.5 * ringScale)
-        buttonIconFont = ringScale < 0.82 ? .footnote.weight(.semibold) : (compactViewport ? .body : .title3)
+        // Controls
+        buttonSize = compact ? max(28, 34 * scale) : max(34, 40 * scale)
+        buttonSpacing = compact ? max(8, 10 * scale) : max(12, 14 * scale)
+        let ringScale = min(max(scale, 0.68), 1.16)
+        buttonIconFont = ringScale < 0.82 ? .footnote.weight(.semibold) : (compact ? .body : .title3)
     }
 }

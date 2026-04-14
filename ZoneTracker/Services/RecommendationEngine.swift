@@ -33,7 +33,7 @@ struct RecommendationEngine {
                 workouts: sorted
             )
         } else {
-            return recommendZone2Session(
+            return recommendTargetZoneSession(
                 lastWorkout: lastWorkout,
                 profile: profile,
                 workouts: sorted
@@ -47,44 +47,46 @@ struct RecommendationEngine {
         profile: UserProfile,
         workouts: [WorkoutEntry]
     ) -> SessionType {
+        let focus = profile.focus
         let thisWeek = workouts.inCurrentWeek()
         let zone2Count = thisWeek.zone2Sessions().count
         let intervalCount = thisWeek.intervalSessions().count
-        let targetZone2Sessions = profile.phase.zone2SessionsPerWeek
-        let targetIntervalSessions = profile.phase.intervalSessionsPerWeek
+        let targetZoneSessions = profile.effectiveTargetZoneSessions
+        let targetIntervalSessions = profile.effectiveIntervalSessions
         let shouldDeferHighIntensity = profile.shouldAvoidHighIntensity(on: Date())
 
-        switch profile.phase {
-        case .phase1:
+        switch focus {
+        case .buildingBase, .activeRecovery:
             return .zone2
 
-        case .phase2:
-            if zone2Count < targetZone2Sessions { return .zone2 }
-            if intervalCount < targetIntervalSessions {
+        case .developingSpeed:
+            if zone2Count < targetZoneSessions { return .zone2 }
+            if targetIntervalSessions > 0 && intervalCount < targetIntervalSessions {
                 if shouldDeferHighIntensity { return .zone2 }
-                return pickIntervalType(for: .phase2, workouts: workouts)
+                return pickIntervalType(for: focus, workouts: workouts)
             }
             return .zone2
 
-        case .phase3:
-            if zone2Count < targetZone2Sessions { return .zone2 }
-            if intervalCount < targetIntervalSessions {
+        case .peakPerformance:
+            if zone2Count < targetZoneSessions { return .zone2 }
+            if targetIntervalSessions > 0 && intervalCount < targetIntervalSessions {
                 if shouldDeferHighIntensity { return .zone2 }
                 // Check 48-hour spacing from last interval
                 if let lastInterval = thisWeek.intervalSessions().sorted(by: { $0.date > $1.date }).first {
                     let hoursSince = Date().timeIntervalSince(lastInterval.date) / 3600
                     if hoursSince < 48 { return .zone2 }
                 }
-                return pickIntervalType(for: .phase3, workouts: workouts)
+                return pickIntervalType(for: focus, workouts: workouts)
             }
             return .zone2
         }
     }
 
     private static func pickIntervalType(
-        for phase: TrainingPhase,
+        for focus: TrainingFocus,
         workouts: [WorkoutEntry]
     ) -> SessionType {
+        let phase = focus.mappedPhase
         let available = SessionType.allCases.filter {
             $0.isInterval && $0.phaseAvailability.contains(phase)
         }
@@ -98,9 +100,9 @@ struct RecommendationEngine {
         return available.first ?? .interval_30_30
     }
 
-    // MARK: - Zone 2 Recommendation
+    // MARK: - Target Zone Recommendation
 
-    private static func recommendZone2Session(
+    private static func recommendTargetZoneSession(
         lastWorkout: WorkoutEntry,
         profile: UserProfile,
         workouts: [WorkoutEntry]
@@ -109,43 +111,55 @@ struct RecommendationEngine {
         let hrData = lastZ2.heartRateData
         let avgHR = hrData.avgHR
 
-        let zone2Low = profile.zone2TargetLow
-        let zone2High = profile.zone2TargetHigh
-        let exerciseType = lastZ2.exerciseType
-        var metrics = lastZ2.metrics
+        let targetLow = profile.zone2TargetLow
+        let targetHigh = profile.zone2TargetHigh
+        let exerciseType = preferredExerciseType(lastUsed: lastZ2.exerciseType, profile: profile)
+        var metrics = exerciseType != lastZ2.exerciseType
+            ? translateMetrics(from: lastZ2.exerciseType, to: exerciseType, metrics: lastZ2.metrics)
+            : lastZ2.metrics
         var duration = lastZ2.duration
         var reasoning: String
         var adjustment: AdjustmentType
 
         if avgHR == 0 {
-            // No HR data — carry forward last settings
-            reasoning = "No heart rate data from your last session. Repeating the same settings — make sure your Apple Watch is connected."
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "No heart rate data from your last session. Repeating the same settings — make sure your Apple Watch is connected."
+            )
             adjustment = .holdSteady
         } else if hrData.hasSignificantDrift {
-            // Significant drift — hold steady
-            reasoning = "Your heart rate drifted up during the session, which means this intensity is still challenging. Let's repeat this workout before progressing."
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "Your heart rate drifted during the session, which means this intensity is still challenging. Let's repeat before progressing."
+            )
             adjustment = .holdSteady
-        } else if avgHR > zone2High + 5 {
-            // HR too high — reduce intensity
+        } else if avgHR > targetHigh + 5 {
             metrics = adjustMetrics(metrics, for: exerciseType, direction: .decrease)
-            reasoning = "Your HR ran high last session (avg \(avgHR) bpm vs target \(zone2Low)–\(zone2High)). Let's dial back the intensity to keep you in Zone 2."
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "Your HR ran high last session (avg \(avgHR) bpm vs target \(targetLow)–\(targetHigh)). Dialing back to keep you in the target zone."
+            )
             adjustment = .decreaseIntensity
-        } else if avgHR < zone2Low - 5 {
-            // HR too low — increase intensity
+        } else if avgHR < targetLow - 5 {
             metrics = adjustMetrics(metrics, for: exerciseType, direction: .increase)
-            reasoning = "You were cruising below your target zone (avg \(avgHR) bpm). Let's bump it up slightly."
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "You were below your target zone (avg \(avgHR) bpm). Bumping it up slightly."
+            )
             adjustment = .increaseIntensity
         } else {
-            // In zone, stable — progress
-            let result = progressZone2(
+            let result = progressTargetZone(
                 duration: duration,
                 metrics: metrics,
                 exerciseType: exerciseType,
-                phase: profile.phase
+                profile: profile
             )
             duration = result.duration
             metrics = result.metrics
-            reasoning = "Great session — right in the zone. \(result.progressNote)"
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "Great session — right in the zone. \(result.progressNote)"
+            )
             adjustment = result.adjustment
         }
 
@@ -153,8 +167,8 @@ struct RecommendationEngine {
             sessionType: .zone2,
             exerciseType: exerciseType,
             targetDuration: duration,
-            targetHRLow: zone2Low,
-            targetHRHigh: zone2High,
+            targetHRLow: targetLow,
+            targetHRHigh: targetHigh,
             suggestedMetrics: metrics,
             intervalProtocol: nil,
             reasoning: reasoning,
@@ -172,10 +186,17 @@ struct RecommendationEngine {
         // Find the most recent interval session of this type
         let lastOfType = workouts.first { $0.sessionType == type }
         let lastInterval = workouts.intervalSessions().first
-        let exerciseType = lastOfType?.exerciseType ?? lastInterval?.exerciseType ?? .treadmill
+        let fallbackType = lastOfType?.exerciseType ?? lastInterval?.exerciseType ?? .treadmill
+        let exerciseType = preferredExerciseType(lastUsed: fallbackType, profile: profile)
 
         var proto = lastOfType?.intervalProtocol ?? type.defaultIntervalProtocol!
-        var metrics = lastOfType?.metrics ?? defaultMetricsForInterval(exerciseType: exerciseType)
+        let sourceMetrics = lastOfType?.metrics ?? defaultMetricsForInterval(exerciseType: exerciseType)
+        var metrics: [String: Double]
+        if let lastType = lastOfType?.exerciseType, lastType != exerciseType {
+            metrics = translateMetrics(from: lastType, to: exerciseType, metrics: sourceMetrics)
+        } else {
+            metrics = sourceMetrics
+        }
         var reasoning: String
         var adjustment: AdjustmentType
 
@@ -184,28 +205,40 @@ struct RecommendationEngine {
             let peakHR = hrData.maxHR
 
             if peakHR > 185 || (last.intervalProtocol.map { hrData.maxHR > $0.targetWorkHRHigh + 5 } ?? false) {
-                // Too hard — reduce rounds or extend rest
                 if proto.rounds > 4 {
                     proto.rounds -= 1
-                    reasoning = "Your peak HR hit \(peakHR) bpm — that's above the target ceiling. Dropping 1 round to keep it sustainable."
+                    reasoning = goalAwareReasoning(
+                        profile: profile,
+                        base: "Your peak HR hit \(peakHR) bpm — above the target ceiling. Dropping 1 round to keep it sustainable."
+                    )
                 } else {
                     proto.restDuration += 15
-                    reasoning = "Your peak HR hit \(peakHR) bpm — adding 15 seconds of rest between intervals."
+                    reasoning = goalAwareReasoning(
+                        profile: profile,
+                        base: "Your peak HR hit \(peakHR) bpm — adding 15 seconds of rest between intervals."
+                    )
                 }
                 adjustment = .decreaseIntensity
             } else if peakHR < (proto.targetWorkHRLow - 5) && peakHR > 0 {
-                // Not reaching target — increase intensity
                 metrics = adjustMetrics(metrics, for: exerciseType, direction: .increase)
-                reasoning = "Your peak HR during intervals didn't reach the target zone (\(peakHR) vs \(proto.targetWorkHRLow)+). Bumping up the intensity for the hard efforts."
+                reasoning = goalAwareReasoning(
+                    profile: profile,
+                    base: "Your peak HR during intervals didn't reach the target zone (\(peakHR) vs \(proto.targetWorkHRLow)+). Bumping up intensity for the hard efforts."
+                )
                 adjustment = .increaseIntensity
             } else {
-                // Good — add rounds
                 proto.rounds += 1
-                reasoning = "Solid interval session! Adding 1 round. You're at \(proto.rounds) rounds now."
+                reasoning = goalAwareReasoning(
+                    profile: profile,
+                    base: "Solid interval session! Adding 1 round. You're at \(proto.rounds) rounds now."
+                )
                 adjustment = .addIntervalRounds
             }
         } else {
-            reasoning = "First \(type.displayName) session! Starting with \(proto.description). Target \(proto.targetWorkHRLow)–\(proto.targetWorkHRHigh) bpm during work intervals."
+            reasoning = goalAwareReasoning(
+                profile: profile,
+                base: "First \(type.displayName) session! Starting with \(proto.description). Target \(proto.targetWorkHRLow)–\(proto.targetWorkHRHigh) bpm during work intervals."
+            )
             adjustment = .holdSteady
         }
 
@@ -226,6 +259,33 @@ struct RecommendationEngine {
         )
     }
 
+    // MARK: - Goal-Aware Reasoning
+
+    private static func goalAwareReasoning(profile: UserProfile, base: String) -> String {
+        let prefix: String
+        switch profile.primaryGoal {
+        case .aerobicBase:
+            prefix = profile.focus == .buildingBase
+                ? "Building your aerobic engine."
+                : "Strengthening your foundation."
+        case .peakCardio:
+            prefix = profile.focus == .peakPerformance
+                ? "Pushing your VO2 max ceiling."
+                : "Laying the groundwork for peak cardio."
+        case .raceTraining:
+            if let days = profile.daysUntilEvent, days > 0, let event = profile.targetEvent {
+                prefix = "\(days) days to your \(event)."
+            } else {
+                prefix = "Building race-day fitness."
+            }
+        case .returnToTraining:
+            prefix = "Rebuilding your rhythm."
+        case .generalFitness:
+            prefix = "Keeping your cardio sharp."
+        }
+        return "\(prefix) \(base)"
+    }
+
     // MARK: - Metric Adjustments
 
     private enum AdjustDirection { case increase, decrease }
@@ -240,7 +300,6 @@ struct RecommendationEngine {
 
         switch exerciseType {
         case .treadmill:
-            // Prefer adjusting speed first, then incline
             if let speed = adjusted["speed"] {
                 adjusted["speed"] = max(1.0, min(12.0, speed + sign * 0.2))
             } else if let incline = adjusted["incline"] {
@@ -269,7 +328,6 @@ struct RecommendationEngine {
 
         case .outdoorRun:
             if let pace = adjusted["pace"] {
-                // Lower pace = faster, so decrease means lower number
                 adjusted["pace"] = max(6, min(20, pace - sign * 0.25))
             }
 
@@ -282,7 +340,7 @@ struct RecommendationEngine {
         return adjusted
     }
 
-    // MARK: - Zone 2 Progression
+    // MARK: - Target Zone Progression
 
     private struct ProgressionResult {
         var duration: TimeInterval
@@ -291,39 +349,53 @@ struct RecommendationEngine {
         var progressNote: String
     }
 
-    private static func progressZone2(
+    private static func progressTargetZone(
         duration: TimeInterval,
         metrics: [String: Double],
         exerciseType: ExerciseType,
-        phase: TrainingPhase
+        profile: UserProfile
     ) -> ProgressionResult {
         var newDuration = duration
         var newMetrics = metrics
         var adjustment: AdjustmentType
         var note: String
 
-        switch phase {
-        case .phase1:
-            if duration < 60 * 60 { // < 60 min
-                newDuration += 5 * 60 // +5 minutes
+        // Fitness level affects progression step size and duration ceiling
+        let durationStep: TimeInterval
+        let durationCeiling: TimeInterval
+        switch profile.fitnessLevel {
+        case .beginner:
+            durationStep = 2 * 60
+            durationCeiling = 40 * 60
+        case .occasional:
+            durationStep = 5 * 60
+            durationCeiling = 60 * 60
+        case .regular, .experienced:
+            durationStep = 5 * 60
+            durationCeiling = 75 * 60
+        }
+
+        switch profile.focus {
+        case .buildingBase, .activeRecovery:
+            if duration < durationCeiling {
+                newDuration += durationStep
                 adjustment = .increaseDuration
-                note = "Here's your next step up: \(Int(newDuration / 60)) minutes."
+                note = "Next step up: \(Int(newDuration / 60)) minutes."
             } else {
                 newMetrics = adjustMetrics(metrics, for: exerciseType, direction: .increase)
                 adjustment = .increaseIntensity
-                note = "You're at 60 min — nudging intensity up slightly."
+                note = "You're at \(Int(duration / 60)) min — nudging intensity up slightly."
             }
 
-        case .phase2, .phase3:
-            // Zone 2 sessions in later phases maintain duration, can nudge intensity
+        case .developingSpeed, .peakPerformance:
             if duration < 45 * 60 {
                 newDuration = 45 * 60
                 adjustment = .increaseDuration
-                note = "Bringing your Zone 2 session up to 45 minutes."
+                note = "Bringing your target zone session up to 45 minutes."
             } else {
                 newMetrics = adjustMetrics(metrics, for: exerciseType, direction: .increase)
                 adjustment = .increaseIntensity
-                note = "Slight intensity bump on your Zone 2 session."
+                note = "Slight intensity bump on your target zone session."
             }
         }
 
@@ -360,6 +432,43 @@ struct RecommendationEngine {
         )
     }
 
+    /// Choose exercise type: prefer the user's selected modalities, apply low-impact filtering,
+    /// fall back to last-used type.
+    private static func preferredExerciseType(
+        lastUsed: ExerciseType,
+        profile: UserProfile
+    ) -> ExerciseType {
+        let preferred = profile.preferredExerciseTypes
+        guard !preferred.isEmpty else {
+            return applyLowImpactFilter(lastUsed, profile: profile)
+        }
+
+        // If last-used type is in their preferred list, keep it
+        if preferred.contains(lastUsed) {
+            return applyLowImpactFilter(lastUsed, profile: profile)
+        }
+
+        // Otherwise pick first preferred type (with low-impact filter)
+        let candidate = preferred.first ?? lastUsed
+        return applyLowImpactFilter(candidate, profile: profile)
+    }
+
+    private static let lowImpactTypes: Set<ExerciseType> = [.bike, .elliptical, .rowing]
+
+    private static func applyLowImpactFilter(_ type: ExerciseType, profile: UserProfile) -> ExerciseType {
+        guard profile.prefersLowImpact else { return type }
+
+        // If already low impact, keep it
+        if lowImpactTypes.contains(type) { return type }
+
+        // Swap to a low-impact preferred modality if available
+        let preferredLowImpact = profile.preferredExerciseTypes.filter { lowImpactTypes.contains($0) }
+        if let alternative = preferredLowImpact.first { return alternative }
+
+        // Otherwise swap to bike as default low-impact
+        return .bike
+    }
+
     private static func defaultMetricsForInterval(exerciseType: ExerciseType) -> [String: Double] {
         var metrics: [String: Double] = [:]
         for def in exerciseType.metricDefinitions {
@@ -369,13 +478,11 @@ struct RecommendationEngine {
     }
 
     /// Translate intensity from one exercise type to another proportionally.
-    /// Maps each metric to its percentage within range, then applies to target exercise.
     static func translateMetrics(
         from sourceType: ExerciseType,
         to targetType: ExerciseType,
         metrics: [String: Double]
     ) -> [String: Double] {
-        // Calculate overall intensity as a percentage (0-1) from source metrics
         let sourceDefs = sourceType.metricDefinitions
         var intensityPercent: Double = 0.5
 
@@ -386,12 +493,10 @@ struct RecommendationEngine {
             }
         }
 
-        // Apply that intensity percentage to target metrics
         var result: [String: Double] = [:]
         for def in targetType.metricDefinitions {
             let range = def.max - def.min
             let value = def.min + (intensityPercent * range)
-            // Round to step
             let stepped = (value / def.step).rounded() * def.step
             result[def.key] = max(def.min, min(def.max, stepped))
         }

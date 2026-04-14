@@ -30,9 +30,24 @@ struct WatchCompanionProfile: Codable, Equatable, Sendable {
     var zone2High: Int
     var phase: TrainingPhase
     var coachingPreferences: CoachingPreferences
+    var focusRaw: String?
+    var goalRaw: String?
 
+    var focus: TrainingFocus {
+        focusRaw.flatMap { TrainingFocus(rawValue: $0) } ?? phase.toFocus
+    }
+
+    var goal: CardioGoal {
+        goalRaw.flatMap { CardioGoal(rawValue: $0) } ?? .generalFitness
+    }
+
+    var targetZoneRange: TargetHeartRateRange {
+        TargetHeartRateRange(low: zone2Low, high: zone2High, label: "Target Zone")
+    }
+
+    // Keep backward compatibility
     var zone2TargetRange: TargetHeartRateRange {
-        TargetHeartRateRange(low: zone2Low, high: zone2High, label: "Zone 2")
+        targetZoneRange
     }
 }
 

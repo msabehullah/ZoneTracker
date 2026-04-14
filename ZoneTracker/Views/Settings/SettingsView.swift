@@ -30,10 +30,10 @@ struct SettingsView: View {
                 VStack(spacing: 16) {
                     accountSection
                     profileSection
-                    zone2Section
+                    targetZoneSection
                     coachingSection
                     legDaysSection
-                    phaseSection
+                    goalSection
                     healthKitSection
                     notificationsSection
                     exportSection
@@ -194,13 +194,13 @@ struct SettingsView: View {
         .settingsCard()
     }
 
-    // MARK: - Zone 2 Section
+    // MARK: - Target Zone Section
 
-    private var zone2Section: some View {
+    private var targetZoneSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Zone 2 Target")
+            sectionHeader("Target Zone")
 
-            Text("Customize the heart rate range for Zone 2 workouts. Default is 130–150 bpm.")
+            Text("Customize the heart rate range for target zone workouts. Default is 130–150 bpm.")
                 .font(.caption)
                 .foregroundColor(.gray)
 
@@ -257,7 +257,7 @@ struct SettingsView: View {
 
             HStack(spacing: 8) {
                 ForEach(weekdaySymbols.indices, id: \.self) { i in
-                    let weekday = i + 1 // weekday indices: 1=Sun ... 7=Sat
+                    let weekday = i + 1
                     let isSelected = profile.legDays.contains(weekday)
 
                     Button {
@@ -287,20 +287,20 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Phase Section
+    // MARK: - Goal & Focus Section
 
-    private var phaseSection: some View {
+    private var goalSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Training Phase")
+            sectionHeader("Goal & Focus")
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.phase.displayName)
+                    Text(profile.primaryGoal.displayName)
                         .font(.subheadline.bold())
                         .foregroundColor(.white)
-                    Text(profile.phase.subtitle)
+                    Text(profile.focus.displayName)
                         .font(.caption)
-                        .foregroundColor(.gray)
+                        .foregroundColor(.zone2Green)
                 }
                 Spacer()
                 Text("Week \(profile.weekNumber)")
@@ -308,12 +308,16 @@ struct SettingsView: View {
                     .foregroundColor(.zone2Green)
             }
 
-            if profile.phase.next != nil {
-                Text("Phase advances automatically when your performance criteria are met (see the Progress tab).")
+            Text(profile.focus.subtitle)
+                .font(.caption)
+                .foregroundColor(.gray)
+
+            if profile.focus.next != nil {
+                Text("Your focus advances automatically when your performance criteria are met.")
                     .font(.caption)
                     .foregroundColor(.gray)
             } else {
-                Text("You are in the final phase. Keep training!")
+                Text("You are at peak performance focus. Keep training!")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
@@ -330,7 +334,7 @@ struct SettingsView: View {
             HStack {
                 Image(systemName: "applewatch")
                     .foregroundColor(.zone2Green)
-                Text("Apple Watch heart rate and workout data is used to personalize your recommendations.")
+                Text("Apple Watch heart rate and workout data is used to personalize your coaching.")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
@@ -360,7 +364,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Notifications")
 
-            Text("Get reminded when you haven't trained in a while, and celebrate phase advancements.")
+            Text("Get reminded when you haven't trained in a while, and celebrate when your focus advances.")
                 .font(.caption)
                 .foregroundColor(.gray)
 
@@ -446,7 +450,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "arrow.counterclockwise")
-                    Text("Reset to Phase 1")
+                    Text("Reset Training")
                 }
                 .font(.subheadline)
                 .foregroundColor(.red)
@@ -456,11 +460,11 @@ struct SettingsView: View {
                 .cornerRadius(10)
             }
             .buttonStyle(.plain)
-            .alert("Reset Training Phase?", isPresented: $showingResetAlert) {
-                Button("Reset", role: .destructive) { resetPhase() }
+            .alert("Reset Training?", isPresented: $showingResetAlert) {
+                Button("Reset", role: .destructive) { resetFocus() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This will set you back to Phase 1, Week 1. Your workout history is preserved.")
+                Text("This will reset your training focus to the beginning. Your workout history is preserved.")
             }
         }
         .settingsCard()
@@ -548,8 +552,8 @@ struct SettingsView: View {
         }
     }
 
-    private func resetPhase() {
-        profile.phase = .phase1
+    private func resetFocus() {
+        profile.focus = profile.primaryGoal.initialFocus
         profile.phaseStartDate = Date()
     }
 }

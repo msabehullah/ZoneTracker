@@ -12,7 +12,9 @@ enum WorkoutPlanningService {
             zone2Low: profile.zone2TargetLow,
             zone2High: profile.zone2TargetHigh,
             phase: profile.phase,
-            coachingPreferences: profile.coachingPreferences
+            coachingPreferences: profile.coachingPreferences,
+            focusRaw: profile.focus.rawValue,
+            goalRaw: profile.primaryGoal.rawValue
         )
     }
 
@@ -67,7 +69,7 @@ enum WorkoutPlanningService {
         let targetRange = TargetHeartRateRange(
             low: profile.zone2TargetLow,
             high: profile.zone2TargetHigh,
-            label: "Zone 2"
+            label: "Target Zone"
         )
         let duration: TimeInterval = 30 * 60
 
@@ -87,16 +89,16 @@ enum WorkoutPlanningService {
             segments: [
                 WorkoutPlanSegment(
                     id: "free-steady",
-                    title: "Free Zone 2",
+                    title: "Free Workout",
                     kind: .steady,
                     startOffset: 0,
                     duration: duration,
                     targetRange: targetRange,
-                    cue: "Stay relaxed and hold your aerobic pace."
+                    cue: "Stay relaxed and hold your target pace."
                 )
             ],
             coachingPreferences: profile.coachingPreferences,
-            rationale: "Free workout mode uses your current Zone 2 profile settings.",
+            rationale: "Free workout using your current target zone settings.",
             isFreeWorkout: true
         )
     }

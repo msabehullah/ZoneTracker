@@ -108,6 +108,7 @@ class WorkoutLogViewModel {
             sessionType: selectedSession,
             heartRateData: heartRateData,
             phase: profile.phase,
+            focus: profile.focus,
             weekNumber: profile.weekNumber,
             rpe: rpe,
             notes: notes.isEmpty ? nil : notes,
@@ -117,18 +118,18 @@ class WorkoutLogViewModel {
 
         context.insert(entry)
 
-        // Check for phase transition
+        // Check for focus transition (does not mutate profile)
         var updatedWorkouts = allWorkouts
         updatedWorkouts.append(entry)
 
-        if PhaseManager.evaluatePhaseTransition(
+        if let transition = PhaseManager.evaluatePhaseTransition(
             profile: profile, workouts: updatedWorkouts
-        ) != nil {
-            profile.advancePhase()
+        ) {
+            PhaseManager.applyTransition(transition, to: profile)
             // The transition message will be shown via the dashboard
         }
 
-        // Generate next recommendation
+        // Generate next recommendation (reflects any transition)
         let recommendation = RecommendationEngine.recommend(
             profile: profile, workouts: updatedWorkouts
         )

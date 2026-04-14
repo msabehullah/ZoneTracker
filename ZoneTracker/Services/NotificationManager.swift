@@ -47,22 +47,25 @@ class NotificationManager: ObservableObject {
         )
     }
 
-    // MARK: - Phase Celebration
+    // MARK: - Focus Celebration
 
     func sendPhaseCelebration(phase: TrainingPhase) {
+        let focus = phase.toFocus
         let body: String
-        switch phase {
-        case .phase1:
-            body = "You've started Phase 1 — Aerobic Base Building. Consistency is everything right now."
-        case .phase2:
-            body = "Phase 2 unlocked! Your aerobic base is solid. Time to introduce intervals."
-        case .phase3:
-            body = "Welcome to Phase 3 — VO2 Max Development. You've earned this."
+        switch focus {
+        case .activeRecovery:
+            body = "Welcome back! Let's rebuild your rhythm together."
+        case .buildingBase:
+            body = "Building your aerobic base. Consistency is everything right now."
+        case .developingSpeed:
+            body = "Your base is solid — time to add speed work and intervals."
+        case .peakPerformance:
+            body = "Peak performance unlocked. You've earned this."
         }
 
         scheduleReminder(
-            id: "phase_\(phase.rawValue)",
-            title: "Phase Advancement",
+            id: "focus_\(focus.rawValue)",
+            title: "Training Focus Advanced",
             body: body,
             delay: 1 // immediate
         )

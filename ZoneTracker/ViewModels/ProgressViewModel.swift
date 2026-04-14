@@ -9,7 +9,7 @@ class ProgressViewModel {
     var paceInTargetHistory: [(date: Date, speed: Double)] = []
     var mileTimeHistory: [(date: Date, seconds: TimeInterval)] = []
     var recoveryHRHistory: [(date: Date, drop: Int)] = []
-    var phaseTimeline: [(phase: TrainingPhase, startDate: Date, endDate: Date?)] = []
+    var focusTimeline: [(focus: TrainingFocus, startDate: Date, endDate: Date?)] = []
 
     private let healthKit = HealthKitManager.shared
 
@@ -21,7 +21,7 @@ class ProgressViewModel {
             restingHRHistory = []
         }
 
-        // Pace in the user's target range — from treadmill Zone 2 workouts
+        // Pace in the user's target range — from treadmill target zone workouts
         paceInTargetHistory = workouts
             .filter { $0.exerciseType == .treadmill && $0.sessionType == .zone2 }
             .sorted { $0.date < $1.date }
@@ -49,37 +49,35 @@ class ProgressViewModel {
                 return (date: workout.date, drop: recovery)
             }
 
-        // Build phase timeline
-        buildPhaseTimeline(workouts: workouts, profile: profile)
+        // Build focus timeline
+        buildFocusTimeline(workouts: workouts, profile: profile)
     }
 
-    private func buildPhaseTimeline(workouts: [WorkoutEntry], profile: UserProfile) {
-        var timeline: [(phase: TrainingPhase, startDate: Date, endDate: Date?)] = []
+    private func buildFocusTimeline(workouts: [WorkoutEntry], profile: UserProfile) {
+        var timeline: [(focus: TrainingFocus, startDate: Date, endDate: Date?)] = []
         let sorted = workouts.sorted { $0.date < $1.date }
 
-        var currentPhase: TrainingPhase?
-        var phaseStart: Date?
+        var currentFocus: TrainingFocus?
+        var focusStart: Date?
 
         for workout in sorted {
-            if workout.phase != currentPhase {
-                // Close previous phase
-                if let prev = currentPhase, let start = phaseStart {
-                    timeline.append((phase: prev, startDate: start, endDate: workout.date))
+            let workoutFocus = workout.focus
+            if workoutFocus != currentFocus {
+                if let prev = currentFocus, let start = focusStart {
+                    timeline.append((focus: prev, startDate: start, endDate: workout.date))
                 }
-                currentPhase = workout.phase
-                phaseStart = workout.date
+                currentFocus = workoutFocus
+                focusStart = workout.date
             }
         }
 
-        // Current open phase
-        if let phase = currentPhase, let start = phaseStart {
-            timeline.append((phase: phase, startDate: start, endDate: nil))
+        if let focus = currentFocus, let start = focusStart {
+            timeline.append((focus: focus, startDate: start, endDate: nil))
         } else if timeline.isEmpty {
-            // No workouts yet — show current phase from profile
-            timeline.append((phase: profile.phase, startDate: profile.phaseStartDate, endDate: nil))
+            timeline.append((focus: profile.focus, startDate: profile.phaseStartDate, endDate: nil))
         }
 
-        phaseTimeline = timeline
+        focusTimeline = timeline
     }
 
     // MARK: - Formatted Values

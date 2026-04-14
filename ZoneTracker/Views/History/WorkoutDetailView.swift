@@ -60,7 +60,7 @@ struct WorkoutDetailView: View {
                 HStack(spacing: 8) {
                     Label(workout.formattedDuration, systemImage: "clock")
                     Label(workout.sessionType.displayName, systemImage: "tag")
-                    Label(workout.phase.displayName, systemImage: "chart.line.uptrend.xyaxis")
+                    Label(workout.focus.displayName, systemImage: "chart.line.uptrend.xyaxis")
                 }
                 .font(.caption)
                 .foregroundColor(.gray)

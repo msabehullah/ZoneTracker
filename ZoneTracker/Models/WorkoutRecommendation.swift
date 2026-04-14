@@ -24,15 +24,45 @@ struct WorkoutRecommendation: Identifiable {
 
     // Default first workout for a brand new user
     static func defaultFirstWorkout(profile: UserProfile) -> WorkoutRecommendation {
-        WorkoutRecommendation(
+        let lowImpactTypes: Set<ExerciseType> = [.bike, .elliptical, .rowing]
+        let preferred = profile.preferredExerciseTypes
+        let candidate = preferred.first ?? .treadmill
+        let exerciseType: ExerciseType
+        if profile.prefersLowImpact && !lowImpactTypes.contains(candidate) {
+            exerciseType = preferred.first(where: { lowImpactTypes.contains($0) }) ?? .bike
+        } else {
+            exerciseType = candidate
+        }
+        let defaultMetrics: [String: Double]
+        switch exerciseType {
+        case .treadmill: defaultMetrics = ["speed": 3.5, "incline": 3.0]
+        default:
+            defaultMetrics = Dictionary(uniqueKeysWithValues:
+                exerciseType.metricDefinitions.map { ($0.key, $0.defaultValue) }
+            )
+        }
+
+        let goalContext: String
+        switch profile.primaryGoal {
+        case .aerobicBase: goalContext = "Let's build your aerobic base."
+        case .peakCardio: goalContext = "Starting with a foundation session before we push intensity."
+        case .raceTraining: goalContext = "Building the aerobic engine for race day."
+        case .returnToTraining: goalContext = "Welcome back. Starting easy to rebuild your rhythm."
+        case .generalFitness: goalContext = "Let's get your first session in."
+        }
+
+        let startDuration = profile.effectiveStartingDuration
+        let startMinutes = Int(startDuration / 60)
+
+        return WorkoutRecommendation(
             sessionType: .zone2,
-            exerciseType: .treadmill,
-            targetDuration: 30 * 60, // 30 minutes
+            exerciseType: exerciseType,
+            targetDuration: startDuration,
             targetHRLow: profile.zone2TargetLow,
             targetHRHigh: profile.zone2TargetHigh,
-            suggestedMetrics: ["speed": 3.5, "incline": 3.0],
+            suggestedMetrics: defaultMetrics,
             intervalProtocol: nil,
-            reasoning: "Welcome to Phase 1! Start with a 30-minute treadmill walk to establish your Zone 2 baseline. Keep your heart rate between \(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm.",
+            reasoning: "\(goalContext) Start with a \(startMinutes)-minute \(exerciseType.displayName.lowercased()) session in your target zone (\(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm).",
             adjustmentType: .holdSteady
         )
     }

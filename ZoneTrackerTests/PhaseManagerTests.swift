@@ -5,22 +5,23 @@ final class PhaseManagerTests: XCTestCase {
 
     // MARK: - Phase 1 → 2 Transition
 
-    func testPhase1DoesNotAdvanceBefore6Weeks() {
-        let profile = makeProfile(phase: .phase1, weeksAgo: 3)
-        let workouts = makeQualifyingPhase1Workouts(weeks: 2)
+    func testBuildingBaseDoesNotAdvanceBeforeMinimumWeeks() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 2)
+        let workouts = makeQualifyingBaseWorkouts(weeks: 2)
         let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
-        XCTAssertNil(result, "Should not advance before minimum 6 weeks")
+        XCTAssertNil(result, "Should not advance before minimum weeks in focus")
     }
 
-    func testPhase1AdvancesWithQualifyingWorkouts() {
-        let profile = makeProfile(phase: .phase1, weeksAgo: 6)
-        let workouts = makeQualifyingPhase1Workouts(weeks: 2)
+    func testBuildingBaseAdvancesWithQualifyingWorkouts() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 5)
+        let workouts = makeQualifyingBaseWorkouts(weeks: 2)
         let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
         XCTAssertNotNil(result, "Should advance with 2 weeks of qualifying Zone 2 sessions")
+        XCTAssertEqual(result?.newFocus, .developingSpeed)
     }
 
-    func testPhase1DoesNotAdvanceWithHighDrift() {
-        let profile = makeProfile(phase: .phase1, weeksAgo: 6)
+    func testBuildingBaseDoesNotAdvanceWithHighDrift() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 5)
         let workouts = [
             makeWorkout(daysAgo: 3, duration: 50 * 60, sessionType: .zone2, phase: .phase1,
                        avgHR: 140, drift: 8.0),  // drift too high
@@ -31,8 +32,8 @@ final class PhaseManagerTests: XCTestCase {
         XCTAssertNil(result, "Should not advance with HR drift >= 5%")
     }
 
-    func testPhase1DoesNotAdvanceWithShortWorkouts() {
-        let profile = makeProfile(phase: .phase1, weeksAgo: 6)
+    func testBuildingBaseDoesNotAdvanceWithShortWorkouts() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 5)
         let workouts = [
             makeWorkout(daysAgo: 3, duration: 30 * 60, sessionType: .zone2, phase: .phase1,
                        avgHR: 140, drift: 2.0),  // only 30 min
@@ -43,8 +44,8 @@ final class PhaseManagerTests: XCTestCase {
         XCTAssertNil(result, "Should not advance with sessions < 45 minutes")
     }
 
-    func testPhase1DoesNotAdvanceWhenCurrentWeekIsEmpty() {
-        let profile = makeProfile(phase: .phase1, weeksAgo: 6)
+    func testBuildingBaseDoesNotAdvanceWhenCurrentWeekIsEmpty() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 5)
         let workouts = [
             makeWorkout(daysAgo: 7, duration: 50 * 60, sessionType: .zone2, phase: .phase1, avgHR: 140, drift: 3.0),
             makeWorkout(daysAgo: 14, duration: 50 * 60, sessionType: .zone2, phase: .phase1, avgHR: 140, drift: 3.0)
@@ -53,13 +54,45 @@ final class PhaseManagerTests: XCTestCase {
         XCTAssertNil(result, "Should require qualifying work in the current and previous week, not skip empty weeks")
     }
 
-    // MARK: - Phase 3 (no transition)
+    // MARK: - Peak Performance (no transition)
 
-    func testPhase3NeverTransitions() {
-        let profile = makeProfile(phase: .phase3, weeksAgo: 20)
-        let workouts = makeQualifyingPhase1Workouts(weeks: 2)
+    func testPeakPerformanceNeverTransitions() {
+        let profile = makeProfile(focus: .peakPerformance, weeksAgo: 20)
+        let workouts = makeQualifyingBaseWorkouts(weeks: 2)
         let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
-        XCTAssertNil(result, "Phase 3 is final — should never trigger transition")
+        XCTAssertNil(result, "Peak performance is final — should never trigger transition")
+    }
+
+    // MARK: - Active Recovery → Building Base
+
+    func testActiveRecoveryAdvancesToBuildingBase() {
+        let profile = makeProfile(focus: .activeRecovery, weeksAgo: 3)
+        let workouts = [
+            makeWorkoutInCurrentWeek(dayOffset: 0),
+            makeWorkoutInCurrentWeek(dayOffset: 1)
+        ]
+        let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
+        XCTAssertNotNil(result, "Should advance after minimum weeks with 2+ sessions this week")
+        XCTAssertEqual(result?.newFocus, .buildingBase, "activeRecovery should advance to buildingBase, not developingSpeed")
+    }
+
+    func testActiveRecoveryDoesNotSkipBuildingBase() {
+        let profile = makeProfile(focus: .activeRecovery, weeksAgo: 3)
+        let workouts = [
+            makeWorkoutInCurrentWeek(dayOffset: 0),
+            makeWorkoutInCurrentWeek(dayOffset: 1)
+        ]
+        let result = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
+        XCTAssertNotEqual(result?.newFocus, .developingSpeed, "Should not skip buildingBase")
+    }
+
+    // MARK: - Transition does not mutate profile
+
+    func testTransitionDoesNotMutateProfile() {
+        let profile = makeProfile(focus: .buildingBase, weeksAgo: 5)
+        let workouts = makeQualifyingBaseWorkouts(weeks: 2)
+        let _ = PhaseManager.evaluatePhaseTransition(profile: profile, workouts: workouts)
+        XCTAssertEqual(profile.focus, .buildingBase, "evaluatePhaseTransition should not mutate profile")
     }
 
     // MARK: - Consistency
@@ -76,6 +109,14 @@ final class PhaseManagerTests: XCTestCase {
 
     // MARK: - Helpers
 
+    private func makeProfile(focus: TrainingFocus, weeksAgo: Int) -> UserProfile {
+        let profile = UserProfile()
+        profile.focus = focus
+        profile.phaseStartDate = Calendar.current.date(byAdding: .weekOfYear, value: -weeksAgo, to: Date()) ?? Date()
+        return profile
+    }
+
+    // Keep legacy helper for tests that need specific phase values on workouts
     private func makeProfile(phase: TrainingPhase, weeksAgo: Int) -> UserProfile {
         let profile = UserProfile()
         profile.phase = phase
@@ -109,7 +150,7 @@ final class PhaseManagerTests: XCTestCase {
         )
     }
 
-    private func makeQualifyingPhase1Workouts(weeks: Int) -> [WorkoutEntry] {
+    private func makeQualifyingBaseWorkouts(weeks: Int) -> [WorkoutEntry] {
         var workouts: [WorkoutEntry] = []
         for week in 0..<weeks {
             // Use week * 7 so week 0 = today (current week) and week 1 = 7 days ago (previous week)
@@ -119,5 +160,39 @@ final class PhaseManagerTests: XCTestCase {
             )
         }
         return workouts
+    }
+
+    private func makeWorkoutInCurrentWeek(
+        dayOffset: Int = 0,
+        sessionType: SessionType = .zone2,
+        phase: TrainingPhase = .phase1
+    ) -> WorkoutEntry {
+        let date = Date().startOfWeek.addingTimeInterval(Double(dayOffset) * 86400 + 43200)
+        return makeWorkout(date: date, sessionType: sessionType, phase: phase)
+    }
+
+    private func makeWorkout(
+        date: Date,
+        duration: TimeInterval = 45 * 60,
+        sessionType: SessionType = .zone2,
+        phase: TrainingPhase = .phase1,
+        avgHR: Int = 140,
+        drift: Double = 2.0
+    ) -> WorkoutEntry {
+        let hrData = HeartRateData(
+            avgHR: avgHR, maxHR: avgHR + 15, minHR: avgHR - 10,
+            timeInZone2: duration * 0.8, timeInZone4Plus: 0,
+            hrDrift: drift, recoveryHR: 30, samples: []
+        )
+        return WorkoutEntry(
+            date: date,
+            exerciseType: .treadmill,
+            duration: duration,
+            metrics: ["speed": 3.5, "incline": 3.0],
+            sessionType: sessionType,
+            heartRateData: hrData,
+            phase: phase,
+            weekNumber: 4
+        )
     }
 }

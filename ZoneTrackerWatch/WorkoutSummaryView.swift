@@ -32,7 +32,7 @@ struct WorkoutSummaryView: View {
                                     .fill(Color.gray.opacity(0.3))
                                     .frame(height: 6)
                                 Capsule()
-                                    .fill(Color.green)
+                                    .fill(adherenceColor)
                                     .frame(width: geo.size.width * adherenceFraction, height: 6)
                             }
                         }
@@ -74,5 +74,11 @@ struct WorkoutSummaryView: View {
 
     private var adherencePercentage: Int {
         Int(adherenceFraction * 100)
+    }
+
+    private var adherenceColor: Color {
+        if adherencePercentage >= 80 { return .green }
+        if adherencePercentage >= 50 { return .yellow }
+        return .orange
     }
 }

@@ -14,7 +14,7 @@ struct ProgressDashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
-                    phaseTimeline
+                    focusTimeline
                     restingHRChart
                     paceChart
                     mileTimeChart
@@ -37,10 +37,10 @@ struct ProgressDashboardView: View {
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - Phase Timeline
+    // MARK: - Focus Timeline
 
-    private var phaseTimeline: some View {
-        let currentItem = viewModel.phaseTimeline.last ?? (phase: profile.phase, startDate: profile.phaseStartDate, endDate: nil)
+    private var focusTimeline: some View {
+        let currentItem = viewModel.focusTimeline.last ?? (focus: profile.focus, startDate: profile.phaseStartDate, endDate: nil)
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
@@ -48,7 +48,7 @@ struct ProgressDashboardView: View {
                     Text("Training Timeline")
                         .font(.headline)
                         .foregroundColor(.white)
-                    Text(currentItem.phase.subtitle)
+                    Text(currentItem.focus.subtitle)
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
@@ -56,7 +56,7 @@ struct ProgressDashboardView: View {
                 Spacer(minLength: 12)
 
                 VStack(alignment: .trailing, spacing: 6) {
-                    Text(currentItem.phase.displayName)
+                    Text(currentItem.focus.displayName)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.zone2Green)
                         .padding(.horizontal, 10)
@@ -66,25 +66,35 @@ struct ProgressDashboardView: View {
                                 .fill(Color.zone2Green.opacity(0.16))
                         )
 
-                    Text(currentItem.phase.weekRange)
+                    Text("Goal: \(profile.primaryGoal.shortName)")
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.gray)
                 }
             }
 
             HStack(spacing: 8) {
-                ForEach(TrainingPhase.allCases) { phase in
-                    phaseStep(phase, currentPhase: currentItem.phase)
+                ForEach(progressFocusSteps) { step in
+                    focusStep(step, currentFocus: currentItem.focus)
                 }
             }
 
             HStack(spacing: 12) {
                 timelineMetric(title: "Started", value: currentItem.startDate.shortDate)
-                timelineMetric(title: "Target", value: "\(currentItem.phase.targetSessionsPerWeek)x/week")
+                timelineMetric(title: "Target", value: "\(currentItem.focus.targetSessionsPerWeek)×/week")
                 timelineMetric(title: "Status", value: currentItem.endDate == nil ? "Current" : "Completed")
             }
         }
         .appCard()
+    }
+
+    private var progressFocusSteps: [TrainingFocus] {
+        // Show the relevant focus steps based on goal
+        switch profile.primaryGoal {
+        case .returnToTraining:
+            return [.activeRecovery, .buildingBase, .developingSpeed, .peakPerformance]
+        default:
+            return [.buildingBase, .developingSpeed, .peakPerformance]
+        }
     }
 
     // MARK: - Resting HR Chart
@@ -127,8 +137,8 @@ struct ProgressDashboardView: View {
 
     private var paceChart: some View {
         chartCard(
-            title: "Pace in Target Range",
-            subtitle: "Treadmill speed while holding \(profile.zone2TargetLow)-\(profile.zone2TargetHigh) bpm"
+            title: "Pace in Target Zone",
+            subtitle: "Treadmill speed while holding \(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm"
         ) {
             if viewModel.paceInTargetHistory.count > 1 {
                 Chart {
@@ -155,7 +165,7 @@ struct ProgressDashboardView: View {
                 .chartXAxis { dateAxisStyle() }
             } else {
                 noDataView(
-                    "Log treadmill Zone 2 sessions inside your target range to track pace improvement.",
+                    "Log treadmill sessions in your target zone to track pace improvement.",
                     systemImage: "speedometer"
                 )
             }
@@ -248,9 +258,9 @@ struct ProgressDashboardView: View {
         .appCard()
     }
 
-    private func phaseStep(_ phase: TrainingPhase, currentPhase: TrainingPhase) -> some View {
-        let isCurrent = phase == currentPhase
-        let isCompleted = phaseIndex(for: phase) < phaseIndex(for: currentPhase)
+    private func focusStep(_ focus: TrainingFocus, currentFocus: TrainingFocus) -> some View {
+        let isCurrent = focus == currentFocus
+        let isCompleted = focusIndex(for: focus) < focusIndex(for: currentFocus)
         let accent = isCurrent ? Color.zone2Green : (isCompleted ? Color.white.opacity(0.8) : Color.gray)
         let titleColor = isCurrent ? Color.white : (isCompleted ? Color.white.opacity(0.9) : Color.gray)
         let background = isCurrent ? Color.zone2Green.opacity(0.12) : Color.black.opacity(isCompleted ? 0.12 : 0.06)
@@ -269,14 +279,11 @@ struct ProgressDashboardView: View {
                     .lineLimit(1)
             }
 
-            Text(phase.displayName)
+            Text(focus.displayName)
                 .font(.caption.weight(.bold))
                 .foregroundColor(titleColor)
-
-            Text(phase.weekRange)
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundColor(.gray)
-                .lineLimit(1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -337,10 +344,10 @@ struct ProgressDashboardView: View {
         let earlierAvg = Double(earlier.reduce(0, +)) / Double(earlier.count)
         let diff = recentAvg - earlierAvg
         if abs(diff) < 1 { return "Stable" }
-        return diff < 0 ? "↓ Improving" : "↑ Elevated"
+        return diff < 0 ? "Improving" : "Elevated"
     }
 
-    private func phaseIndex(for phase: TrainingPhase) -> Int {
-        TrainingPhase.allCases.firstIndex(of: phase) ?? 0
+    private func focusIndex(for focus: TrainingFocus) -> Int {
+        progressFocusSteps.firstIndex(of: focus) ?? 0
     }
 }

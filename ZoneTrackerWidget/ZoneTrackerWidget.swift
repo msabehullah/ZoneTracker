@@ -18,11 +18,11 @@ struct ZoneTrackerProvider: TimelineProvider {
 
         let entry = ZoneEntry(
             date: Date(),
-            phase: defaults.string(forKey: "widget_phase") ?? "Phase 1",
+            focus: defaults.string(forKey: "widget_phase") ?? "Building Your Base",
             weekNumber: defaults.integer(forKey: "widget_weekNumber"),
             sessionsThisWeek: defaults.integer(forKey: "widget_sessionsThisWeek"),
             targetSessions: defaults.integer(forKey: "widget_targetSessions"),
-            nextWorkoutType: defaults.string(forKey: "widget_nextSessionType") ?? "Zone 2",
+            nextWorkoutType: defaults.string(forKey: "widget_nextSessionType") ?? "Target Zone",
             nextWorkoutDuration: defaults.integer(forKey: "widget_nextDuration")
         )
 
@@ -36,7 +36,7 @@ struct ZoneTrackerProvider: TimelineProvider {
 
 struct ZoneEntry: TimelineEntry {
     let date: Date
-    let phase: String
+    let focus: String
     let weekNumber: Int
     let sessionsThisWeek: Int
     let targetSessions: Int
@@ -45,11 +45,11 @@ struct ZoneEntry: TimelineEntry {
 
     static let placeholder = ZoneEntry(
         date: Date(),
-        phase: "Phase 1",
+        focus: "Building Your Base",
         weekNumber: 3,
         sessionsThisWeek: 2,
         targetSessions: 3,
-        nextWorkoutType: "Zone 2",
+        nextWorkoutType: "Target Zone",
         nextWorkoutDuration: 45
     )
 }
@@ -122,9 +122,11 @@ struct ZoneTrackerWidgetEntryView: View {
         HStack(spacing: 16) {
             // Left: progress
             VStack(alignment: .leading, spacing: 6) {
-                Text(entry.phase)
+                Text(entry.focus)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
                 Text("Week \(entry.weekNumber)")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.green)
@@ -194,12 +196,14 @@ struct ZoneTrackerWidgetEntryView: View {
             HStack {
                 Image(systemName: "heart.fill")
                     .font(.caption2)
-                Text(entry.phase)
+                Text(entry.focus)
                     .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
             }
             Text("\(entry.sessionsThisWeek)/\(entry.targetSessions) sessions · \(entry.nextWorkoutType) next")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
         }
     }
 }

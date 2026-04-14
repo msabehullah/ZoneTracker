@@ -2,69 +2,125 @@ import Foundation
 
 // MARK: - Phase Manager
 
+struct FocusTransition {
+    let newFocus: TrainingFocus
+    let message: String
+}
+
 struct PhaseManager {
 
-    /// Evaluate whether the user should transition to the next phase.
-    /// Returns a message if a transition is triggered, nil otherwise.
+    /// Evaluate whether the user should transition to the next focus.
+    /// Returns a transition result if criteria are met, nil otherwise.
+    /// Does NOT mutate the profile — callers must apply the transition.
     static func evaluatePhaseTransition(
         profile: UserProfile,
         workouts: [WorkoutEntry]
-    ) -> String? {
-        switch profile.phase {
-        case .phase1:
-            return evaluatePhase1to2(profile: profile, workouts: workouts)
-        case .phase2:
-            return evaluatePhase2to3(profile: profile, workouts: workouts)
-        case .phase3:
-            return nil // Final phase
+    ) -> FocusTransition? {
+        switch profile.focus {
+        case .activeRecovery:
+            return evaluateRecoveryToBase(profile: profile, workouts: workouts)
+        case .buildingBase:
+            return evaluateBaseToSpeed(profile: profile, workouts: workouts)
+        case .developingSpeed:
+            return evaluateSpeedToPeak(profile: profile, workouts: workouts)
+        case .peakPerformance:
+            return nil
         }
     }
 
-    // MARK: - Phase 1 → Phase 2
+    /// Apply a transition to a profile. Single point of mutation.
+    static func applyTransition(_ transition: FocusTransition, to profile: UserProfile) {
+        profile.focus = transition.newFocus
+        profile.phaseStartDate = Date()
+    }
 
-    /// Criteria: sustain 45+ min Zone 2 with stable HR (drift <5%) for 2 consecutive weeks,
-    /// AND at least 6 weeks in Phase 1.
-    private static func evaluatePhase1to2(
+    // MARK: - Recovery → Building Base
+
+    private static func evaluateRecoveryToBase(
         profile: UserProfile,
         workouts: [WorkoutEntry]
-    ) -> String? {
-        guard profile.weekNumber >= profile.phase.minimumWeeks else { return nil }
+    ) -> FocusTransition? {
+        guard profile.weekNumber >= profile.focus.minimumWeeks else { return nil }
 
-        let phase1Workouts = workouts.inPhase(.phase1).zone2Sessions()
-        let recentWeeks = lastNWeeks(2, from: phase1Workouts)
+        let recentWorkouts = workouts.inCurrentWeek()
+        guard recentWorkouts.count >= 2 else { return nil }
 
-        // Need qualifying sessions in both of the last 2 weeks
+        return FocusTransition(
+            newFocus: .buildingBase,
+            message: """
+            You've rebuilt a consistent rhythm — great work. \
+            Your focus is shifting to building a stronger aerobic base. \
+            Keep showing up and your engine will grow.
+            """
+        )
+    }
+
+    // MARK: - Building Base → Developing Speed
+
+    /// Criteria: sustain 45+ min in target zone with stable HR (drift <5%) for 2 consecutive weeks,
+    /// AND at least the minimum weeks in this focus (reduced if event date is approaching).
+    private static func evaluateBaseToSpeed(
+        profile: UserProfile,
+        workouts: [WorkoutEntry]
+    ) -> FocusTransition? {
+        let minWeeks = effectiveMinWeeks(for: profile)
+        guard profile.weekNumber >= minWeeks else { return nil }
+
+        let baseWorkouts = workouts.zone2Sessions()
+        let recentWeeks = lastNWeeks(2, from: baseWorkouts)
+
         guard recentWeeks.count == 2 else { return nil }
 
         for weekWorkouts in recentWeeks {
             let qualifying = weekWorkouts.filter { workout in
-                workout.duration >= 45 * 60 && // 45+ minutes
-                workout.heartRateData.hrDrift < 5.0 // Stable HR
+                workout.duration >= 45 * 60 &&
+                workout.heartRateData.hrDrift < 5.0
             }
             guard !qualifying.isEmpty else { return nil }
         }
 
-        return """
-        🎉 Phase 1 Complete! You've built a solid aerobic base — sustaining 45+ minutes \
-        in Zone 2 with stable heart rate for 2 consecutive weeks. Time to introduce \
-        intervals! Phase 2 keeps your Zone 2 sessions and adds one interval workout per week.
-        """
+        let goalContext: String
+        switch profile.primaryGoal {
+        case .aerobicBase:
+            goalContext = "Your aerobic base is solid."
+        case .peakCardio:
+            goalContext = "Base work is done — time to start pushing your ceiling."
+        case .raceTraining:
+            if let days = profile.daysUntilEvent, days > 0 {
+                goalContext = "With \(days) days until race day, it's time to add speed work."
+            } else {
+                goalContext = "Your base is ready for race-specific training."
+            }
+        case .returnToTraining, .generalFitness:
+            goalContext = "You've built a strong foundation."
+        }
+
+        return FocusTransition(
+            newFocus: .developingSpeed,
+            message: """
+            \(goalContext) You've sustained 45+ minutes in your target zone with stable \
+            heart rate for 2 consecutive weeks. Your focus is shifting to developing speed — \
+            interval workouts will be added to your plan.
+            """
+        )
     }
 
-    // MARK: - Phase 2 → Phase 3
+    // MARK: - Developing Speed → Peak Performance
 
-    /// Criteria: complete 12+ interval rounds at target HR AND Zone 2 pace improvement
-    /// AND at least 6 weeks in Phase 2.
-    private static func evaluatePhase2to3(
+    /// Criteria: complete 12+ interval rounds at target HR AND target zone pace improvement
+    /// AND at least the minimum weeks in this focus (reduced if event date is approaching).
+    private static func evaluateSpeedToPeak(
         profile: UserProfile,
         workouts: [WorkoutEntry]
-    ) -> String? {
-        guard profile.weekNumber >= profile.phase.minimumWeeks else { return nil }
+    ) -> FocusTransition? {
+        let minWeeks = effectiveMinWeeks(for: profile)
+        guard profile.weekNumber >= minWeeks else { return nil }
 
-        let phase2Workouts = workouts.inPhase(.phase2)
-        let intervalWorkouts = phase2Workouts.intervalSessions()
+        // Scope to current focus window — only consider workouts since phaseStartDate
+        let focusWorkouts = workouts.filter { $0.date >= profile.phaseStartDate }
 
-        // Check if any interval session hit 12+ rounds
+        let intervalWorkouts = focusWorkouts.intervalSessions()
+
         let hasHighRoundCount = intervalWorkouts.contains { workout in
             guard let proto = workout.intervalProtocol else { return false }
             return proto.rounds >= 12
@@ -72,8 +128,7 @@ struct PhaseManager {
 
         guard hasHighRoundCount else { return nil }
 
-        // Check Zone 2 pace improvement: compare earliest vs latest treadmill Z2 sessions
-        let treadmillZ2 = phase2Workouts.zone2Sessions()
+        let treadmillZ2 = focusWorkouts.zone2Sessions()
             .filter { $0.exerciseType == .treadmill }
             .sorted { $0.date < $1.date }
 
@@ -83,22 +138,32 @@ struct PhaseManager {
             guard lateSpeed > earlySpeed else { return nil }
         }
 
-        return """
-        🔥 Phase 2 Complete! Your interval capacity has grown significantly — 12+ rounds \
-        at target heart rate — and your aerobic base continues to improve. Phase 3 unlocks \
-        VO2 max training: Norwegian 4×4s, Tabata, and long intervals. Get ready to push \
-        your ceiling!
-        """
+        let goalContext: String
+        switch profile.primaryGoal {
+        case .peakCardio:
+            goalContext = "Time to push your VO2 max to its limit."
+        case .raceTraining:
+            goalContext = "Your speed work has paid off — time for peak race preparation."
+        default:
+            goalContext = "Your interval capacity has grown significantly."
+        }
+
+        return FocusTransition(
+            newFocus: .peakPerformance,
+            message: """
+            \(goalContext) You've completed 12+ rounds at target heart rate and your aerobic \
+            base continues to improve. Peak performance training unlocks advanced intervals: \
+            Norwegian 4×4s, Tabata, and long intervals.
+            """
+        )
     }
 
     // MARK: - Consistency Check
 
-    /// Returns the number of sessions completed in the current week
     static func sessionsThisWeek(workouts: [WorkoutEntry]) -> Int {
         workouts.inCurrentWeek().count
     }
 
-    /// Returns true if user missed 2+ sessions last week relative to target
     static func missedSessionsLastWeek(
         workouts: [WorkoutEntry],
         profile: UserProfile
@@ -111,14 +176,13 @@ struct PhaseManager {
             $0.date >= lastWeekStart && $0.date < lastWeekEnd
         }
 
-        let target = profile.phase.targetSessionsPerWeek
+        let target = profile.effectiveSessionsPerWeek
         let completed = lastWeekWorkouts.count
         return (target - completed) >= 2
     }
 
     // MARK: - Helpers
 
-    /// Group workouts into the last N weeks, returning an array of arrays
     private static func lastNWeeks(_ n: Int, from workouts: [WorkoutEntry]) -> [[WorkoutEntry]] {
         let calendar = Calendar.current
         var result: [[WorkoutEntry]] = []
@@ -131,5 +195,17 @@ struct PhaseManager {
         }
 
         return result
+    }
+
+    /// Reduce minimum weeks in a focus if the user has a race date approaching.
+    /// If <8 weeks remain, allow transition after 2 weeks instead of the default minimum.
+    private static func effectiveMinWeeks(for profile: UserProfile) -> Int {
+        let base = profile.focus.minimumWeeks
+        guard profile.primaryGoal == .raceTraining,
+              let days = profile.daysUntilEvent,
+              days > 0, days < 56 else {
+            return base
+        }
+        return min(base, 2)
     }
 }

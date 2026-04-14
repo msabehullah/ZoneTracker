@@ -9,7 +9,7 @@ struct DataExporter {
         var lines: [String] = []
 
         // Header
-        lines.append("Date,Exercise,Session Type,Duration (min),Avg HR,Max HR,Min HR,Zone 2 Time (min),HR Drift %,Recovery HR,RPE,Phase,Week,Notes")
+        lines.append("Date,Exercise,Session Type,Duration (min),Avg HR,Max HR,Min HR,Target Zone Time (min),HR Drift %,Recovery HR,RPE,Focus,Week,Notes")
 
         // Rows
         let sorted = workouts.sorted { $0.date < $1.date }
@@ -30,7 +30,7 @@ struct DataExporter {
                 String(format: "%.1f", hr.hrDrift),
                 hr.recoveryHR.map { "\($0)" } ?? "",
                 entry.rpe.map { "\($0)" } ?? "",
-                entry.phase.displayName,
+                entry.focus.displayName,
                 "\(entry.weekNumber)",
                 escapeCSV(entry.notes ?? "")
             ]

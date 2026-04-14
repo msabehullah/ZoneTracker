@@ -16,6 +16,17 @@ struct CloudProfileSnapshot: Equatable, Sendable {
     var legDays: [Int]
     var coachingHapticsEnabled: Bool
     var coachingAlertCooldownSeconds: Int
+    // Goal-driven fields
+    var primaryGoalRaw: String
+    var targetEvent: String?
+    var targetEventDate: Date?
+    var fitnessLevelRaw: String
+    var weeklyCardioFrequency: Int
+    var typicalWorkoutMinutes: Int
+    var preferredModalities: [String]
+    var availableTrainingDays: Int
+    var intensityConstraintRaw: String
+    var currentFocusRaw: String
 
     static func from(profile: UserProfile, accountIdentifier: String) -> CloudProfileSnapshot {
         CloudProfileSnapshot(
@@ -32,7 +43,17 @@ struct CloudProfileSnapshot: Equatable, Sendable {
             zone2High: profile.zone2TargetHigh,
             legDays: profile.legDays,
             coachingHapticsEnabled: profile.coachingHapticsEnabled,
-            coachingAlertCooldownSeconds: profile.coachingAlertCooldownSeconds
+            coachingAlertCooldownSeconds: profile.coachingAlertCooldownSeconds,
+            primaryGoalRaw: profile.primaryGoalRaw,
+            targetEvent: profile.targetEvent,
+            targetEventDate: profile.targetEventDate,
+            fitnessLevelRaw: profile.fitnessLevelRaw,
+            weeklyCardioFrequency: profile.weeklyCardioFrequency,
+            typicalWorkoutMinutes: profile.typicalWorkoutMinutes,
+            preferredModalities: profile.preferredModalities,
+            availableTrainingDays: profile.availableTrainingDays,
+            intensityConstraintRaw: profile.intensityConstraintRaw,
+            currentFocusRaw: profile.currentFocusRaw
         )
     }
 }
@@ -55,6 +76,7 @@ struct CloudWorkoutSnapshot: Equatable, Sendable {
     var rpe: Int?
     var notes: String?
     var intervalProtocolData: Data?
+    var focusRaw: String
 
     static func from(workout: WorkoutEntry, accountIdentifier: String) -> CloudWorkoutSnapshot {
         CloudWorkoutSnapshot(
@@ -74,7 +96,8 @@ struct CloudWorkoutSnapshot: Equatable, Sendable {
             weekNumber: workout.weekNumber,
             rpe: workout.rpe,
             notes: workout.notes,
-            intervalProtocolData: workout.intervalProtocolData
+            intervalProtocolData: workout.intervalProtocolData,
+            focusRaw: workout.focusRaw
         )
     }
 }
@@ -166,6 +189,16 @@ actor CloudSyncService {
         record["legDaysData"] = (try? JSONEncoder().encode(snapshot.legDays)) as CKRecordValue?
         record["coachingHapticsEnabled"] = snapshot.coachingHapticsEnabled as CKRecordValue
         record["coachingAlertCooldownSeconds"] = snapshot.coachingAlertCooldownSeconds as CKRecordValue
+        record["primaryGoalRaw"] = snapshot.primaryGoalRaw as CKRecordValue
+        record["targetEvent"] = snapshot.targetEvent as CKRecordValue?
+        record["targetEventDate"] = snapshot.targetEventDate as CKRecordValue?
+        record["fitnessLevelRaw"] = snapshot.fitnessLevelRaw as CKRecordValue
+        record["weeklyCardioFrequency"] = snapshot.weeklyCardioFrequency as CKRecordValue
+        record["typicalWorkoutMinutes"] = snapshot.typicalWorkoutMinutes as CKRecordValue
+        record["preferredModalitiesData"] = (try? JSONEncoder().encode(snapshot.preferredModalities)) as CKRecordValue?
+        record["availableTrainingDays"] = snapshot.availableTrainingDays as CKRecordValue
+        record["intensityConstraintRaw"] = snapshot.intensityConstraintRaw as CKRecordValue
+        record["currentFocusRaw"] = snapshot.currentFocusRaw as CKRecordValue
     }
 
     private func apply(snapshot: CloudWorkoutSnapshot, to record: CKRecord) {
@@ -186,6 +219,7 @@ actor CloudSyncService {
         record["rpe"] = snapshot.rpe as CKRecordValue?
         record["notes"] = snapshot.notes as CKRecordValue?
         record["intervalProtocolData"] = snapshot.intervalProtocolData as CKRecordValue?
+        record["focusRaw"] = snapshot.focusRaw as CKRecordValue
     }
 
     private static func profileSnapshot(from record: CKRecord) throws -> CloudProfileSnapshot {
@@ -203,7 +237,17 @@ actor CloudSyncService {
             zone2High: record["zone2High"] as? Int ?? 150,
             legDays: decodeLegDays(from: record["legDaysData"] as? Data),
             coachingHapticsEnabled: record["coachingHapticsEnabled"] as? Bool ?? true,
-            coachingAlertCooldownSeconds: record["coachingAlertCooldownSeconds"] as? Int ?? 18
+            coachingAlertCooldownSeconds: record["coachingAlertCooldownSeconds"] as? Int ?? 18,
+            primaryGoalRaw: record["primaryGoalRaw"] as? String ?? CardioGoal.generalFitness.rawValue,
+            targetEvent: record["targetEvent"] as? String,
+            targetEventDate: record["targetEventDate"] as? Date,
+            fitnessLevelRaw: record["fitnessLevelRaw"] as? String ?? FitnessLevel.occasional.rawValue,
+            weeklyCardioFrequency: record["weeklyCardioFrequency"] as? Int ?? 2,
+            typicalWorkoutMinutes: record["typicalWorkoutMinutes"] as? Int ?? 30,
+            preferredModalities: decodeModalities(from: record["preferredModalitiesData"] as? Data),
+            availableTrainingDays: record["availableTrainingDays"] as? Int ?? 3,
+            intensityConstraintRaw: record["intensityConstraintRaw"] as? String ?? "none",
+            currentFocusRaw: record["currentFocusRaw"] as? String ?? ""
         )
     }
 
@@ -227,12 +271,18 @@ actor CloudSyncService {
             weekNumber: record["weekNumber"] as? Int ?? 1,
             rpe: record["rpe"] as? Int,
             notes: record["notes"] as? String,
-            intervalProtocolData: record["intervalProtocolData"] as? Data
+            intervalProtocolData: record["intervalProtocolData"] as? Data,
+            focusRaw: record["focusRaw"] as? String ?? ""
         )
     }
 
     private static func decodeLegDays(from data: Data?) -> [Int] {
         guard let data else { return [] }
         return (try? JSONDecoder().decode([Int].self, from: data)) ?? []
+    }
+
+    private static func decodeModalities(from data: Data?) -> [String] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 }

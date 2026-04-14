@@ -26,6 +26,7 @@ final class WorkoutEntry {
     var sessionTypeRaw: String     // SessionType rawValue
     var heartRateDataEncoded: Data? // JSON-encoded HeartRateData
     var phaseRaw: String           // TrainingPhase rawValue
+    var focusRaw: String = ""      // TrainingFocus rawValue (empty = derive from phase)
     var weekNumber: Int
     var rpe: Int?
     var notes: String?
@@ -44,6 +45,7 @@ final class WorkoutEntry {
         sessionType: SessionType,
         heartRateData: HeartRateData,
         phase: TrainingPhase,
+        focus: TrainingFocus? = nil,
         weekNumber: Int,
         rpe: Int? = nil,
         notes: String? = nil,
@@ -62,6 +64,7 @@ final class WorkoutEntry {
         self.sessionTypeRaw = sessionType.rawValue
         self.heartRateDataEncoded = try? JSONEncoder().encode(heartRateData)
         self.phaseRaw = phase.rawValue
+        self.focusRaw = (focus ?? phase.toFocus).rawValue
         self.weekNumber = weekNumber
         self.rpe = rpe
         self.notes = notes
@@ -83,6 +86,11 @@ final class WorkoutEntry {
     var phase: TrainingPhase {
         get { TrainingPhase(rawValue: phaseRaw) ?? .phase1 }
         set { phaseRaw = newValue.rawValue }
+    }
+
+    var focus: TrainingFocus {
+        get { TrainingFocus(rawValue: focusRaw) ?? phase.toFocus }
+        set { focusRaw = newValue.rawValue }
     }
 
     var metrics: [String: Double] {

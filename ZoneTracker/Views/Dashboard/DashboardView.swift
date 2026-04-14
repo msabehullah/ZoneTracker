@@ -11,14 +11,14 @@ struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     @State private var connectivity = ConnectivityManager.shared
     @State private var showingLogWorkout = false
-    @State private var showPhaseTransition = false
+    @State private var showFocusTransition = false
     @State private var deliveryBanner: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    phaseHeader
+                    focusHeader
                     nextWorkoutCard
                     weekProgressView
                     quickStats
@@ -35,12 +35,12 @@ struct DashboardView: View {
             .sheet(isPresented: $showingLogWorkout) {
                 LogWorkoutView(profile: profile, recommendation: viewModel.nextRecommendation)
             }
-            .alert("Phase Complete!", isPresented: $showPhaseTransition) {
-                Button("Awesome!") {
+            .alert("Focus Advanced!", isPresented: $showFocusTransition) {
+                Button("Let's Go!") {
                     viewModel.load(profile: profile, workouts: workouts)
                 }
             } message: {
-                Text(viewModel.phaseTransitionMessage ?? "")
+                Text(viewModel.focusTransitionMessage ?? "")
             }
             .onAppear {
                 viewModel.load(profile: profile, workouts: workouts)
@@ -48,8 +48,8 @@ struct DashboardView: View {
             }
             .onChange(of: workouts.count) {
                 viewModel.load(profile: profile, workouts: workouts)
-                if viewModel.phaseTransitionMessage != nil {
-                    showPhaseTransition = true
+                if viewModel.focusTransitionMessage != nil {
+                    showFocusTransition = true
                 }
             }
             .overlay(alignment: .top) {
@@ -70,26 +70,33 @@ struct DashboardView: View {
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - Phase Header
+    // MARK: - Focus Header
 
-    private var phaseHeader: some View {
+    private var focusHeader: some View {
         VStack(spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.phase.displayName)
+                    Text(profile.focus.displayName)
                         .font(.system(.title3, design: .rounded).bold())
                         .foregroundColor(.white)
-                    Text(profile.phase.subtitle)
+                    Text("Goal: \(profile.primaryGoal.shortName)")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                 }
                 Spacer()
-                Text("Week \(profile.weekNumber)")
-                    .font(.system(.title3, design: .monospaced))
-                    .foregroundColor(.zone2Green)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Week \(profile.weekNumber)")
+                        .font(.system(.title3, design: .monospaced))
+                        .foregroundColor(.zone2Green)
+                    if let days = profile.daysUntilEvent, days > 0 {
+                        Text("\(days) days to event")
+                            .font(.caption)
+                            .foregroundColor(.zone2Green.opacity(0.8))
+                    }
+                }
             }
 
-            // Phase progress bar
+            // Focus progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -97,7 +104,7 @@ struct DashboardView: View {
                         .frame(height: 5)
                     Capsule()
                         .fill(Color.zone2Green)
-                        .frame(width: phaseProgress(geo.size.width), height: 5)
+                        .frame(width: focusProgress(geo.size.width), height: 5)
                 }
             }
             .frame(height: 5)
@@ -105,8 +112,8 @@ struct DashboardView: View {
         .appCard(padding: 12)
     }
 
-    private func phaseProgress(_ totalWidth: CGFloat) -> CGFloat {
-        let minWeeks = max(profile.phase.minimumWeeks, 6)
+    private func focusProgress(_ totalWidth: CGFloat) -> CGFloat {
+        let minWeeks = max(profile.focus.minimumWeeks, 4)
         let progress = min(1.0, Double(profile.weekNumber) / Double(minWeeks))
         return totalWidth * progress
     }

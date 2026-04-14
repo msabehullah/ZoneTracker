@@ -26,6 +26,7 @@ enum WatchWorkoutIngestionService {
             sessionType: payload.sessionType,
             heartRateData: payload.heartRateData,
             phase: profile.phase,
+            focus: profile.focus,
             weekNumber: profile.weekNumber,
             rpe: nil,
             notes: payload.notes,

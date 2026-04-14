@@ -146,6 +146,42 @@ final class RecommendationEngineTests: XCTestCase {
                       "Should return Zone 2 when interval was < 48h ago")
     }
 
+    // MARK: - Avoid High Intensity
+
+    func testAvoidHighIntensityBlocksIntervals() {
+        let profile = makeProfile(phase: .phase2)
+        profile.intensityConstraint = .avoidHighIntensity
+        let workouts = lastWeekFillers(phase: .phase2) + [
+            makeWorkoutInCurrentWeek(dayOffset: 0, sessionType: .zone2, phase: .phase2),
+            makeWorkoutInCurrentWeek(dayOffset: 1, sessionType: .zone2, phase: .phase2)
+        ]
+        let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
+        XCTAssertEqual(rec.sessionType, .zone2,
+                      "Avoid high intensity constraint should block interval recommendations")
+    }
+
+    // MARK: - Low Impact Preference
+
+    func testLowImpactPreferenceInfluencesExerciseType() {
+        let profile = makeProfile(phase: .phase1)
+        profile.intensityConstraint = .lowImpactPreferred
+        profile.preferredModalities = [ExerciseType.treadmill.rawValue, ExerciseType.bike.rawValue]
+        let rec = RecommendationEngine.recommend(profile: profile, workouts: [])
+        // With low-impact preference and bike in preferred, should choose bike over treadmill
+        XCTAssertEqual(rec.exerciseType, .bike,
+                      "Low-impact preference should choose bike when available in preferred modalities")
+    }
+
+    // MARK: - Preferred Modalities
+
+    func testPreferredModalityUsedForFirstWorkout() {
+        let profile = makeProfile(phase: .phase1)
+        profile.preferredModalities = [ExerciseType.elliptical.rawValue]
+        let rec = RecommendationEngine.recommend(profile: profile, workouts: [])
+        XCTAssertEqual(rec.exerciseType, .elliptical,
+                      "First workout should use preferred exercise type")
+    }
+
     // MARK: - Helpers
 
     private func makeProfile(phase: TrainingPhase = .phase1) -> UserProfile {

@@ -129,6 +129,104 @@ final class UserProfileTests: XCTestCase {
         XCTAssertNil(TrainingPhase.phase3.next)
     }
 
+    // MARK: - Focus / Phase Synchronization
+
+    func testFocusSetterSyncsPhase() {
+        let profile = UserProfile()
+        profile.focus = .developingSpeed
+        XCTAssertEqual(profile.phase, .phase2, "Setting focus should sync phase via mappedPhase")
+        XCTAssertEqual(profile.currentPhase, "phase2")
+    }
+
+    func testPhaseSetterSyncsFocus() {
+        let profile = UserProfile()
+        profile.phase = .phase3
+        XCTAssertEqual(profile.focus, .peakPerformance, "Setting phase should sync focus via toFocus")
+    }
+
+    func testFocusActiveRecoveryMapsToPhase1() {
+        let profile = UserProfile()
+        profile.focus = .activeRecovery
+        XCTAssertEqual(profile.phase, .phase1, "activeRecovery maps to phase1 internally")
+        XCTAssertEqual(profile.focus, .activeRecovery, "focus should remain activeRecovery, not buildingBase")
+    }
+
+    func testPhaseSetterDoesNotOverwriteMatchingFocus() {
+        let profile = UserProfile()
+        profile.focus = .developingSpeed // sets phase to .phase2
+        profile.phase = .phase2 // should NOT overwrite focus since it already matches
+        XCTAssertEqual(profile.focus, .developingSpeed)
+    }
+
+    // MARK: - Legacy Migration
+
+    func testLegacyPhase2ProfileMigratesToDevelopingSpeed() {
+        let profile = UserProfile()
+        // Simulate a legacy profile that has currentPhase set but empty currentFocusRaw
+        profile.currentPhase = TrainingPhase.phase2.rawValue
+        profile.currentFocusRaw = "" // legacy: no focus was stored
+        XCTAssertEqual(profile.focus, .developingSpeed, "Empty focusRaw should fall back to phase.toFocus")
+    }
+
+    func testLegacyPhase3ProfileMigratesToPeakPerformance() {
+        let profile = UserProfile()
+        profile.currentPhase = TrainingPhase.phase3.rawValue
+        profile.currentFocusRaw = ""
+        XCTAssertEqual(profile.focus, .peakPerformance)
+    }
+
+    // MARK: - Focus Progression
+
+    func testFocusNext() {
+        XCTAssertEqual(TrainingFocus.activeRecovery.next, .buildingBase)
+        XCTAssertEqual(TrainingFocus.buildingBase.next, .developingSpeed)
+        XCTAssertEqual(TrainingFocus.developingSpeed.next, .peakPerformance)
+        XCTAssertNil(TrainingFocus.peakPerformance.next)
+    }
+
+    func testAdvanceFocus() {
+        let profile = UserProfile()
+        profile.focus = .activeRecovery
+        profile.advanceFocus()
+        XCTAssertEqual(profile.focus, .buildingBase, "activeRecovery should advance to buildingBase")
+        profile.advanceFocus()
+        XCTAssertEqual(profile.focus, .developingSpeed)
+        profile.advanceFocus()
+        XCTAssertEqual(profile.focus, .peakPerformance)
+        profile.advanceFocus()
+        XCTAssertEqual(profile.focus, .peakPerformance, "peakPerformance is final")
+    }
+
+    // MARK: - Effective Session Counts
+
+    func testEffectiveSessionsCappedByAvailableDays() {
+        let profile = UserProfile()
+        profile.focus = .peakPerformance // targetSessionsPerWeek = 4
+        profile.availableTrainingDays = 2
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 2, "Should be capped by available days")
+    }
+
+    func testEffectiveIntervalSessionsBlockedByAvoidHighIntensity() {
+        let profile = UserProfile()
+        profile.focus = .developingSpeed // intervalSessionsPerWeek = 1
+        profile.intensityConstraint = .avoidHighIntensity
+        XCTAssertEqual(profile.effectiveIntervalSessions, 0, "Avoid high intensity should block intervals")
+    }
+
+    func testEffectiveStartingDurationForBeginner() {
+        let profile = UserProfile()
+        profile.fitnessLevel = .beginner
+        profile.typicalWorkoutMinutes = 60 // wants 60 but beginner cap is 30
+        XCTAssertEqual(profile.effectiveStartingDuration, 30 * 60, "Beginner should be capped at 30 min")
+    }
+
+    func testEffectiveStartingDurationForExperienced() {
+        let profile = UserProfile()
+        profile.fitnessLevel = .experienced
+        profile.typicalWorkoutMinutes = 60
+        XCTAssertEqual(profile.effectiveStartingDuration, 60 * 60, "Experienced user should get their requested duration")
+    }
+
     // MARK: - Helpers
 
     private func nextWeekday(_ weekday: Int) -> Date {

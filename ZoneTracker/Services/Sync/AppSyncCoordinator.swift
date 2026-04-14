@@ -140,7 +140,6 @@ final class AppSyncCoordinator {
         profile.maxHR = remoteProfile.maxHeartRate
         profile.weight = remoteProfile.weight
         profile.height = remoteProfile.height
-        profile.currentPhase = remoteProfile.currentPhase
         profile.phaseStartDate = remoteProfile.phaseStartDate
         profile.hasCompletedOnboarding = remoteProfile.hasCompletedOnboarding
         profile.zone2TargetLow = remoteProfile.zone2Low
@@ -148,6 +147,20 @@ final class AppSyncCoordinator {
         profile.legDays = remoteProfile.legDays
         profile.coachingHapticsEnabled = remoteProfile.coachingHapticsEnabled
         profile.coachingAlertCooldownSeconds = remoteProfile.coachingAlertCooldownSeconds
+        profile.primaryGoalRaw = remoteProfile.primaryGoalRaw
+        profile.targetEvent = remoteProfile.targetEvent
+        profile.targetEventDate = remoteProfile.targetEventDate
+        profile.fitnessLevelRaw = remoteProfile.fitnessLevelRaw
+        profile.weeklyCardioFrequency = remoteProfile.weeklyCardioFrequency
+        profile.typicalWorkoutMinutes = remoteProfile.typicalWorkoutMinutes
+        profile.preferredModalities = remoteProfile.preferredModalities
+        profile.availableTrainingDays = remoteProfile.availableTrainingDays
+        profile.intensityConstraintRaw = remoteProfile.intensityConstraintRaw
+        // Set currentFocusRaw first, then currentPhase — the phase setter
+        // only overwrites focusRaw when they don't match, so this preserves
+        // the exact focus (e.g. activeRecovery) from the remote record.
+        profile.currentFocusRaw = remoteProfile.currentFocusRaw
+        profile.currentPhase = remoteProfile.currentPhase
     }
 
     private func makeProfile(from snapshot: CloudProfileSnapshot) -> UserProfile {
@@ -163,14 +176,25 @@ final class AppSyncCoordinator {
             coachingAlertCooldownSeconds: snapshot.coachingAlertCooldownSeconds
         )
         profile.maxHR = snapshot.maxHeartRate
-        profile.currentPhase = snapshot.currentPhase
         profile.phaseStartDate = snapshot.phaseStartDate
         profile.hasCompletedOnboarding = snapshot.hasCompletedOnboarding
         profile.legDays = snapshot.legDays
+        profile.primaryGoalRaw = snapshot.primaryGoalRaw
+        profile.targetEvent = snapshot.targetEvent
+        profile.targetEventDate = snapshot.targetEventDate
+        profile.fitnessLevelRaw = snapshot.fitnessLevelRaw
+        profile.weeklyCardioFrequency = snapshot.weeklyCardioFrequency
+        profile.typicalWorkoutMinutes = snapshot.typicalWorkoutMinutes
+        profile.preferredModalities = snapshot.preferredModalities
+        profile.availableTrainingDays = snapshot.availableTrainingDays
+        profile.intensityConstraintRaw = snapshot.intensityConstraintRaw
+        profile.currentFocusRaw = snapshot.currentFocusRaw
+        profile.currentPhase = snapshot.currentPhase
         return profile
     }
 
     private func makeWorkout(from snapshot: CloudWorkoutSnapshot) -> WorkoutEntry {
+        let focus = TrainingFocus(rawValue: snapshot.focusRaw)
         let entry = WorkoutEntry(
             accountIdentifier: snapshot.accountIdentifier,
             completionIdentifier: snapshot.completionIdentifier,
@@ -184,6 +208,7 @@ final class AppSyncCoordinator {
             sessionType: SessionType(rawValue: snapshot.sessionTypeRaw) ?? .zone2,
             heartRateData: .empty,
             phase: TrainingPhase(rawValue: snapshot.phaseRaw) ?? .phase1,
+            focus: focus,
             weekNumber: snapshot.weekNumber,
             rpe: snapshot.rpe,
             notes: snapshot.notes,
