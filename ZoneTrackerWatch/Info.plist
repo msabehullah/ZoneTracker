@@ -17,7 +17,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>4</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>ZoneTracker reads heart rate during workouts to display your current zone and track training progress.</string>
 	<key>NSHealthUpdateUsageDescription</key>

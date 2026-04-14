@@ -22,6 +22,10 @@ schemes:
     test:
       targets:
         - ZoneTrackerTests
+  ZoneTrackerWatch:
+    build:
+      targets:
+        ZoneTrackerWatch: all
 
 targets:
   ZoneTracker:

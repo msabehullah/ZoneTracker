@@ -8,8 +8,29 @@ Use this checklist on a physical iPhone + Apple Watch pair. The simulator build 
 - `Sign in with Apple` capability is enabled for the iPhone app target.
 - CloudKit capability is enabled with the intended container.
 - The iPhone and Apple Watch are paired and signed into the expected Apple ID.
+- The iPhone is trusted by the Mac, visible in Xcode, and available as a run destination.
+- The watch appears in Xcode as a paired watch destination before attempting watch installation.
+- Developer Mode is enabled on both the iPhone and the paired Apple Watch.
 - HealthKit permissions are available on both devices.
 - Start from a clean install when verifying onboarding/auth behavior.
+
+## Watch Setup Sanity Check
+
+Run this before spending time on app-side debugging for the watch.
+
+1. Connect the paired iPhone to the Mac with a cable and keep it unlocked.
+2. Confirm the iPhone appears in `Xcode > Window > Devices and Simulators`.
+3. In Xcode, select the shared `ZoneTrackerWatch` scheme.
+4. Check whether the paired Apple Watch appears as a watch run destination.
+5. If the watch does not appear, confirm the watch is unlocked, on wrist or recently unlocked, and near the iPhone.
+6. Confirm Developer Mode is enabled on both the iPhone and the paired Apple Watch.
+7. If Xcode or `devicectl` times out waiting for `CoreDeviceService`, restart device services on the Mac, reconnect the iPhone, and reopen the destination picker.
+8. Retry a watch run from Xcode after the iPhone is available for development.
+9. If the watch still does not appear, reboot the iPhone and Apple Watch, then re-check Xcode.
+10. If the watch still does not appear, fix the phone/watch pairing state before changing app code.
+
+Expected result:
+- Xcode can see the physical watch as a destination. Until that happens, watch install failures are not actionable app-side failures.
 
 ## 1. Auth And App Gating
 
