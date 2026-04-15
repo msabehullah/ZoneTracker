@@ -10,6 +10,7 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable, Sendable {
     case rowing
     case outdoorRun
     case rucking
+    case swimming
 
     var id: String { rawValue }
 
@@ -22,18 +23,20 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .rowing: return "Rowing Machine"
         case .outdoorRun: return "Outdoor Run/Walk"
         case .rucking: return "Rucking"
+        case .swimming: return "Swimming"
         }
     }
 
     var sfSymbol: String {
         switch self {
-        case .treadmill: return "figure.run"
+        case .treadmill: return "figure.run.treadmill"
         case .elliptical: return "figure.elliptical"
         case .stairClimber: return "figure.stairs"
         case .bike: return "figure.indoor.cycle"
-        case .rowing: return "figure.rowing"
-        case .outdoorRun: return "figure.run.circle"
+        case .rowing: return "figure.indoor.rowing"
+        case .outdoorRun: return "figure.run"
         case .rucking: return "figure.hiking"
+        case .swimming: return "figure.pool.swim"
         }
     }
 
@@ -72,6 +75,11 @@ enum ExerciseType: String, Codable, CaseIterable, Identifiable, Sendable {
             return [
                 MetricDefinition(key: "weight", name: "Weight", unit: "lbs", min: 10, max: 60, step: 5, defaultValue: 20),
                 MetricDefinition(key: "pace", name: "Pace", unit: "min/mi", min: 12, max: 25, step: 0.25, defaultValue: 18.0)
+            ]
+        case .swimming:
+            return [
+                MetricDefinition(key: "pace", name: "Pace", unit: "min/100m", min: 1.2, max: 4.0, step: 0.05, defaultValue: 2.2),
+                MetricDefinition(key: "strokeRate", name: "Strokes/min", unit: "spm", min: 20, max: 80, step: 1, defaultValue: 40)
             ]
         }
     }
@@ -115,6 +123,19 @@ enum SessionType: String, Codable, CaseIterable, Identifiable, Sendable {
         case .interval_tabata: return "Tabata"
         case .interval_longIntervals: return "Long Intervals"
         case .benchmark_mile: return "Mile Benchmark"
+        }
+    }
+
+    /// User-facing label for recommendation / coaching surfaces (dashboard,
+    /// widget, "Next workout" card). The rest of the app says "target zone",
+    /// not "Zone 2" — this helper is the shared source of truth so the two
+    /// labels don't drift again. `displayName` is kept as the technical name
+    /// for history / export / debug surfaces where the concrete session type
+    /// matters.
+    var coachingLabel: String {
+        switch self {
+        case .zone2: return "Target Zone"
+        default: return displayName
         }
     }
 

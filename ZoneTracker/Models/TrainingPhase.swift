@@ -134,7 +134,7 @@ enum CardioGoal: String, Codable, CaseIterable, Identifiable, Sendable {
         case .aerobicBase: return "heart.fill"
         case .peakCardio: return "bolt.heart.fill"
         case .raceTraining: return "flag.checkered"
-        case .returnToTraining: return "arrow.counterclockwise.heart"
+        case .returnToTraining: return "arrow.uturn.forward.circle.fill"
         case .generalFitness: return "figure.run"
         }
     }
@@ -172,9 +172,18 @@ enum FitnessLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .beginner: return "New to Cardio"
-        case .occasional: return "Occasional (1–2×/week)"
-        case .regular: return "Regular (3–4×/week)"
-        case .experienced: return "Experienced (5+×/week)"
+        case .occasional: return "Casual"
+        case .regular: return "Consistent"
+        case .experienced: return "Experienced"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .beginner: return "Just starting out or returning after a long break"
+        case .occasional: return "Some cardio here and there, nothing structured"
+        case .regular: return "Cardio is a steady part of your routine"
+        case .experienced: return "You train regularly and know your zones"
         }
     }
 

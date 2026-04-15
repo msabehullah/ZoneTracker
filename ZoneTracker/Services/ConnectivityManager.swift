@@ -18,7 +18,22 @@ final class ConnectivityManager: NSObject {
     var isPaired = false
     var isWatchAppInstalled = false
 
-    var onWorkoutCompletionReceived: ((WorkoutCompletionPayload) -> Void)?
+    /// Legacy callback. Prefer `setWorkoutCompletionHandler(_:)` which drains
+    /// any payloads that arrived before the handler was installed. Kept as a
+    /// property so existing call sites that assign directly still work, but
+    /// new code should go through the setter.
+    var onWorkoutCompletionReceived: ((WorkoutCompletionPayload) -> Void)? {
+        didSet { flushPendingCompletionsIfReady() }
+    }
+
+    /// Payloads that arrived before any handler was installed. WCSession is
+    /// activated from `init()` (well before `AppRootView.task` installs a
+    /// handler), so `didReceiveUserInfo` / `didReceiveMessage` can realistically
+    /// fire against an empty callback. Without this buffer those completions
+    /// were silently lost — matching the "watch workout didn't come back"
+    /// reports. Keyed by completionIdentifier so repeated deliveries (sendMessage
+    /// + transferUserInfo redundancy) don't queue the same payload twice.
+    private var pendingCompletions: [WorkoutCompletionPayload] = []
 
     private var cachedProfile: WatchCompanionProfile?
     private var cachedPlan: WorkoutExecutionPlan?
@@ -101,7 +116,7 @@ final class ConnectivityManager: NSObject {
             do {
                 let payload = try WatchSyncEnvelope.decodeWorkoutCompletion(from: message)
                 lastSyncDate = Date()
-                onWorkoutCompletionReceived?(payload)
+                deliverOrQueue(payload)
             } catch {
                 print("Failed to decode workout completion: \(error)")
             }
@@ -109,6 +124,57 @@ final class ConnectivityManager: NSObject {
             break
         }
     }
+
+    // MARK: - Durable completion delivery
+
+    /// Install the handler that ingests completions into SwiftData. Safe to
+    /// call any time after app startup — buffered payloads flush immediately.
+    func setWorkoutCompletionHandler(_ handler: @escaping (WorkoutCompletionPayload) -> Void) {
+        onWorkoutCompletionReceived = handler
+        // didSet on the property will call flushPendingCompletionsIfReady().
+    }
+
+    /// Deliver synchronously if a handler exists, otherwise buffer the payload
+    /// for the next flush. Dedupes by `completionIdentifier` (`payload.id`) so
+    /// the sendMessage + transferUserInfo redundancy on the watch side doesn't
+    /// queue the same completion twice.
+    private func deliverOrQueue(_ payload: WorkoutCompletionPayload) {
+        if let handler = onWorkoutCompletionReceived {
+            handler(payload)
+            return
+        }
+        guard !pendingCompletions.contains(where: { $0.id == payload.id }) else { return }
+        pendingCompletions.append(payload)
+    }
+
+    private func flushPendingCompletionsIfReady() {
+        guard let handler = onWorkoutCompletionReceived,
+              !pendingCompletions.isEmpty else { return }
+        let drained = pendingCompletions
+        pendingCompletions.removeAll()
+        for payload in drained {
+            handler(payload)
+        }
+    }
+
+    #if DEBUG
+    /// Test-only accessor so unit tests can assert buffer contents without
+    /// reaching into private state elsewhere in the app.
+    var debug_pendingCompletionCount: Int { pendingCompletions.count }
+
+    /// Test-only entry point — lets tests inject a decoded payload through the
+    /// same queue-or-deliver path WCSession uses, without needing a live
+    /// WCSession in the simulator (which doesn't work).
+    func debug_injectCompletion(_ payload: WorkoutCompletionPayload) {
+        deliverOrQueue(payload)
+    }
+
+    /// Test-only reset so tests are order-independent against the shared instance.
+    func debug_reset() {
+        pendingCompletions.removeAll()
+        onWorkoutCompletionReceived = nil
+    }
+    #endif
 }
 
 extension ConnectivityManager: WCSessionDelegate {

@@ -22,49 +22,13 @@ struct WorkoutRecommendation: Identifiable {
         Int(targetDuration / 60)
     }
 
-    // Default first workout for a brand new user
+    /// Default first workout for a brand-new user.
+    ///
+    /// Thin compatibility shim that delegates to ``FirstWorkoutStrategy`` —
+    /// the real decision logic lives there. Kept so existing call sites and
+    /// snapshot tests continue to compile.
     static func defaultFirstWorkout(profile: UserProfile) -> WorkoutRecommendation {
-        let lowImpactTypes: Set<ExerciseType> = [.bike, .elliptical, .rowing]
-        let preferred = profile.preferredExerciseTypes
-        let candidate = preferred.first ?? .treadmill
-        let exerciseType: ExerciseType
-        if profile.prefersLowImpact && !lowImpactTypes.contains(candidate) {
-            exerciseType = preferred.first(where: { lowImpactTypes.contains($0) }) ?? .bike
-        } else {
-            exerciseType = candidate
-        }
-        let defaultMetrics: [String: Double]
-        switch exerciseType {
-        case .treadmill: defaultMetrics = ["speed": 3.5, "incline": 3.0]
-        default:
-            defaultMetrics = Dictionary(uniqueKeysWithValues:
-                exerciseType.metricDefinitions.map { ($0.key, $0.defaultValue) }
-            )
-        }
-
-        let goalContext: String
-        switch profile.primaryGoal {
-        case .aerobicBase: goalContext = "Let's build your aerobic base."
-        case .peakCardio: goalContext = "Starting with a foundation session before we push intensity."
-        case .raceTraining: goalContext = "Building the aerobic engine for race day."
-        case .returnToTraining: goalContext = "Welcome back. Starting easy to rebuild your rhythm."
-        case .generalFitness: goalContext = "Let's get your first session in."
-        }
-
-        let startDuration = profile.effectiveStartingDuration
-        let startMinutes = Int(startDuration / 60)
-
-        return WorkoutRecommendation(
-            sessionType: .zone2,
-            exerciseType: exerciseType,
-            targetDuration: startDuration,
-            targetHRLow: profile.zone2TargetLow,
-            targetHRHigh: profile.zone2TargetHigh,
-            suggestedMetrics: defaultMetrics,
-            intervalProtocol: nil,
-            reasoning: "\(goalContext) Start with a \(startMinutes)-minute \(exerciseType.displayName.lowercased()) session in your target zone (\(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm).",
-            adjustmentType: .holdSteady
-        )
+        FirstWorkoutStrategy.recommend(for: profile)
     }
 
     var formattedMetrics: String {

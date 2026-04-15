@@ -18,7 +18,7 @@ struct NextWorkoutCard: View {
                     .font(.title2)
                     .foregroundColor(.zone2Green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(recommendation.sessionType.displayName)
+                    Text(recommendation.sessionType.coachingLabel)
                         .font(.system(.headline, design: .monospaced))
                         .foregroundColor(.white)
                     Text(recommendation.exerciseType.displayName)

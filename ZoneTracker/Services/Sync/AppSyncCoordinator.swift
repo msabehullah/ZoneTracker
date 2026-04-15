@@ -1,3 +1,4 @@
+import CloudKit
 import Foundation
 import Observation
 import SwiftData
@@ -32,7 +33,7 @@ final class AppSyncCoordinator {
                 workouts: workouts,
                 accountIdentifier: accountStore.appleUserID
             )
-            lastSyncError = "Cloud sync is unavailable in the current simulator build."
+            lastSyncError = "Cloud backup is only available on a physical device."
             return
         }
 
@@ -103,7 +104,12 @@ final class AppSyncCoordinator {
             lastSyncDate = Date()
             lastSyncError = nil
         } catch {
-            lastSyncError = error.localizedDescription
+            // Log full raw detail for debugging; surface a friendly message
+            // to the UI instead of the raw CloudKit text
+            // ("did not find record type: ZTProfile", etc.) which users can't
+            // act on and makes the app feel broken.
+            print("CloudKit sync failed: \(error)")
+            lastSyncError = CloudSyncErrorFormatter.friendlyMessage(for: error)
         }
     }
 

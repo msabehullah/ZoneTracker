@@ -51,6 +51,7 @@ enum SampleDataSeeder {
         profile.height = 70
         profile.phase = .phase2
         profile.phaseStartDate = Date().weeksAgo(4)
+        profile.hasSubmittedAssessment = true
         profile.hasCompletedOnboarding = true
         profile.zone2TargetLow = 132
         profile.zone2TargetHigh = 148

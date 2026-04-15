@@ -283,6 +283,7 @@ class HealthKitManager: ObservableObject {
         case .rowing: return .rowing
         case .outdoorRun: return .running
         case .rucking: return .hiking
+        case .swimming: return .swimming
         }
     }
 
@@ -292,6 +293,8 @@ class HealthKitManager: ObservableObject {
             return .indoor
         case .outdoorRun, .rucking:
             return .outdoor
+        case .swimming:
+            return .indoor
         default:
             return .unknown
         }
@@ -314,6 +317,7 @@ class HealthKitManager: ObservableObject {
         case .cycling: return .bike
         case .rowing: return .rowing
         case .hiking: return .rucking
+        case .swimming: return .swimming
         default: return .treadmill
         }
     }

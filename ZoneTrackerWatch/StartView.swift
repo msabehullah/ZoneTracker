@@ -14,7 +14,8 @@ struct StartView: View {
         .bike,
         .rowing,
         .outdoorRun,
-        .rucking
+        .rucking,
+        .swimming
     ]
 
     var body: some View {
@@ -125,74 +126,77 @@ struct StartView: View {
 
     private func plannedWorkoutCard(plan: WorkoutExecutionPlan) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Next Planned Workout")
-                .font(.system(.caption, design: .rounded).bold())
-                .foregroundColor(.gray)
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Next Planned Workout")
+                    .font(.system(.caption, design: .rounded).bold())
+                    .foregroundColor(.gray)
 
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: plan.exerciseType.sfSymbol)
-                    .font(.title3)
-                    .foregroundColor(.green)
-                    .frame(width: 22, height: 22, alignment: .topLeading)
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: plan.exerciseType.sfSymbol)
+                        .font(.title3)
+                        .foregroundColor(.green)
+                        .frame(width: 22, height: 22, alignment: .topLeading)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(plan.sessionType.displayName)
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(plan.exerciseType.displayName)
-                        .font(.system(size: 12))
-                        .foregroundColor(.gray)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(plan.sessionType.displayName)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(plan.exerciseType.displayName)
+                            .font(.system(size: 12))
+                            .foregroundColor(.gray)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                Spacer(minLength: 0)
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    workoutBadge("\(plan.targetDurationMinutes) min")
-                    workoutBadge(plan.overallTargetRange.displayText)
                     Spacer(minLength: 0)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    workoutBadge("\(plan.targetDurationMinutes) min")
-                    workoutBadge(plan.overallTargetRange.displayText)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        workoutBadge("\(plan.targetDurationMinutes) min")
+                        workoutBadge(plan.overallTargetRange.displayText)
+                        Spacer(minLength: 0)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        workoutBadge("\(plan.targetDurationMinutes) min")
+                        workoutBadge(plan.overallTargetRange.displayText)
+                    }
+                }
+
+                if let firstSegment = plan.segments.first {
+                    Text("Starts with \(firstSegment.title)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundColor(.orange)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            if let firstSegment = plan.segments.first {
-                Text("Starts with \(firstSegment.title)")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundColor(.orange)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color(white: 0.12))
+            .cornerRadius(14)
 
             Button {
                 Task {
                     await manager.startPlannedWorkout(plan)
                 }
             } label: {
-                Text("Start on Watch")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundColor(.black)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.green)
-                    .cornerRadius(10)
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 13, weight: .bold))
+                    Text("Start on Watch")
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color(white: 0.12))
-        .cornerRadius(14)
     }
 
     private var waitingForPlanCard: some View {

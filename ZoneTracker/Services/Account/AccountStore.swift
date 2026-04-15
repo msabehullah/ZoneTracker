@@ -39,6 +39,24 @@ final class AccountStore {
         sessionState == .signedIn && appleUserID != nil
     }
 
+    /// Display-friendly primary line for the account card. Apple only gives us
+    /// the full name on the very first sign-in, so subsequent installs or
+    /// re-signs start with `displayName == nil`. Fall back gracefully rather
+    /// than printing "Signed in with Apple" flatly for returning users.
+    var displayNamePresentation: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        if let email, !email.isEmpty { return email }
+        return "Signed in with Apple"
+    }
+
+    /// Display-friendly secondary line. Apple may hide email via Private Relay,
+    /// or we may simply not have it stored. Explain the state rather than
+    /// leaving a blank.
+    var emailPresentation: String {
+        if let email, !email.isEmpty { return email }
+        return "Apple ID email hidden or private relay"
+    }
+
     func restoreSession() async {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-codex-bypass-auth") {

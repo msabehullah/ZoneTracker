@@ -3,6 +3,19 @@ import SwiftData
 
 // MARK: - Settings View
 
+/// Settings screen follows a clear read-only → edit → save pattern:
+///
+/// * By default, the screen renders persisted profile values as **read-only**
+///   cards. No accidental taps can mutate the profile.
+/// * Tapping **Edit** lifts the persisted values into a local
+///   ``SettingsDraft``. Controls become editable. A **Save** button appears
+///   in the toolbar, and **Edit** turns into **Cancel**.
+/// * Tapping **Cancel** discards the draft. Tapping **Save** commits it once,
+///   syncs to Watch + CloudKit, and exits edit mode with a confirmation
+///   banner.
+///
+/// Edit Assessment is a separate pathway and is not part of this draft flow —
+/// it opens the reusable ``AssessmentFlowView`` which has its own Cancel/Save.
 struct SettingsView: View {
     @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     @Bindable var profile: UserProfile
@@ -10,19 +23,18 @@ struct SettingsView: View {
     @State private var accountStore = AccountStore.shared
     @State private var syncCoordinator = AppSyncCoordinator.shared
 
-    // Local editing state
-    @State private var ageText: String = ""
-    @State private var weightText: String = ""
-    @State private var heightFeet: Int = 5
-    @State private var heightInches: Int = 8
-    @State private var zone2Low: Int = 130
-    @State private var zone2High: Int = 150
-    @State private var coachingHapticsEnabled = true
-    @State private var coachingAlertCooldown = 18
+    // Edit-mode state
+    @State private var isEditing = false
+    @State private var draft: SettingsDraft = .empty
     @State private var showingResetAlert = false
     @State private var showingSavedBanner = false
     @State private var showingExportShare = false
     @State private var exportURL: URL?
+
+    // Assessment edit sheet state (separate pathway)
+    @State private var showingAssessmentEdit = false
+    @State private var assessmentDraft: AssessmentDraft = .blank
+    @State private var assessmentOriginalGoal: CardioGoal = .generalFitness
 
     var body: some View {
         NavigationStack {
@@ -48,35 +60,63 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .foregroundColor(.zone2Green)
-                        .fontWeight(.semibold)
-                }
-            }
-            .onAppear { loadCurrentValues() }
+            .toolbar { toolbarContent }
             .overlay(alignment: .top) {
                 if showingSavedBanner {
                     savedBanner
                 }
+            }
+            .sheet(isPresented: $showingAssessmentEdit) {
+                AssessmentFlowView(
+                    draft: $assessmentDraft,
+                    mode: .editExisting,
+                    originalGoal: assessmentOriginalGoal,
+                    onCancel: { showingAssessmentEdit = false },
+                    onComplete: { resetFocus in
+                        commitAssessmentEdit(resetFocus: resetFocus)
+                    }
+                )
+                .interactiveDismissDisabled()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - Profile Section
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        if isEditing {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { cancelEditing() }
+                    .foregroundColor(.gray)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { saveEditing() }
+                    .foregroundColor(.zone2Green)
+                    .fontWeight(.semibold)
+            }
+        } else {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Edit") { beginEditing() }
+                    .foregroundColor(.zone2Green)
+                    .fontWeight(.semibold)
+            }
+        }
+    }
+
+    // MARK: - Account
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Account")
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(accountStore.displayName ?? "Signed in with Apple")
+                Text(accountStore.displayNamePresentation)
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
-                Text(accountStore.email ?? "Private Apple relay or hidden email")
+                Text(accountStore.emailPresentation)
                     .font(.caption)
                     .foregroundColor(.gray)
                 if let lastSyncDate = syncCoordinator.lastSyncDate {
@@ -108,56 +148,64 @@ struct SettingsView: View {
         .settingsCard()
     }
 
+    // MARK: - Profile
+
     private var profileSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader("Profile")
 
-            settingRow("Age") {
-                HStack {
-                    TextField("31", text: $ageText)
-                        .keyboardType(.numberPad)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 60)
-                    Text("years")
-                        .foregroundColor(.gray)
-                        .font(.subheadline)
-                }
-            }
-
-            settingRow("Weight") {
-                HStack {
-                    TextField("150", text: $weightText)
-                        .keyboardType(.numberPad)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.trailing)
-                        .frame(width: 60)
-                    Text("lbs")
-                        .foregroundColor(.gray)
-                        .font(.subheadline)
-                }
-            }
-
-            settingRow("Height") {
-                HStack(spacing: 8) {
-                    Picker("Feet", selection: $heightFeet) {
-                        ForEach(4...7, id: \.self) { Text("\($0) ft") }
+            if isEditing {
+                settingRow("Age") {
+                    HStack {
+                        TextField("31", text: $draft.ageText)
+                            .keyboardType(.numberPad)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("years")
+                            .foregroundColor(.gray)
+                            .font(.subheadline)
                     }
-                    .pickerStyle(.menu)
-                    .tint(.white)
-
-                    Picker("Inches", selection: $heightInches) {
-                        ForEach(0...11, id: \.self) { Text("\($0) in") }
-                    }
-                    .pickerStyle(.menu)
-                    .tint(.white)
                 }
+
+                settingRow("Weight") {
+                    HStack {
+                        TextField("150", text: $draft.weightText)
+                            .keyboardType(.numberPad)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 60)
+                        Text("lbs")
+                            .foregroundColor(.gray)
+                            .font(.subheadline)
+                    }
+                }
+
+                settingRow("Height") {
+                    HStack(spacing: 8) {
+                        Picker("Feet", selection: $draft.heightFeet) {
+                            ForEach(4...7, id: \.self) { Text("\($0) ft") }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(.white)
+
+                        Picker("Inches", selection: $draft.heightInches) {
+                            ForEach(0...11, id: \.self) { Text("\($0) in") }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(.white)
+                    }
+                }
+            } else {
+                readOnlyRow("Age", value: "\(profile.age) years")
+                readOnlyRow("Weight", value: "\(Int(profile.weight)) lbs")
+                readOnlyRow("Height", value: formatHeight(totalInches: Int(profile.height)))
             }
 
             settingRow("Max HR") {
-                Text("\(220 - (Int(ageText) ?? profile.age)) bpm")
+                Text("\(220 - previewAge) bpm")
                     .font(.system(.body, design: .monospaced))
                     .foregroundColor(.gray)
             }
@@ -165,36 +213,7 @@ struct SettingsView: View {
         .settingsCard()
     }
 
-    private var coachingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Coaching")
-
-            Toggle(isOn: $coachingHapticsEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Watch Haptic Coaching")
-                        .foregroundColor(.white)
-                    Text("Alert when your heart rate leaves the active target range, then re-arm after you return.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            }
-            .tint(.zone2Green)
-
-            settingRow("Cooldown") {
-                Stepper(
-                    "\(coachingAlertCooldown) sec",
-                    value: $coachingAlertCooldown,
-                    in: 10...45,
-                    step: 1
-                )
-                .font(.system(.body, design: .monospaced))
-                .foregroundColor(.white)
-            }
-        }
-        .settingsCard()
-    }
-
-    // MARK: - Target Zone Section
+    // MARK: - Target Zone
 
     private var targetZoneSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -204,27 +223,29 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundColor(.gray)
 
-            settingRow("Lower Bound") {
-                HStack {
-                    Stepper("\(zone2Low) bpm", value: $zone2Low, in: 100...180)
+            if isEditing {
+                settingRow("Lower Bound") {
+                    Stepper("\(draft.zone2Low) bpm", value: $draft.zone2Low, in: 100...180)
                         .font(.system(.body, design: .monospaced))
                         .foregroundColor(.white)
                 }
-            }
 
-            settingRow("Upper Bound") {
-                HStack {
-                    Stepper("\(zone2High) bpm", value: $zone2High, in: 110...200)
+                settingRow("Upper Bound") {
+                    Stepper("\(draft.zone2High) bpm", value: $draft.zone2High, in: 110...200)
                         .font(.system(.body, design: .monospaced))
                         .foregroundColor(.white)
                 }
+            } else {
+                readOnlyRow("Lower Bound", value: "\(profile.zone2TargetLow) bpm")
+                readOnlyRow("Upper Bound", value: "\(profile.zone2TargetHigh) bpm")
             }
 
-            // Zone preview bar
+            // Zone preview bar reflects the draft value while editing so the
+            // user can see their change in context before saving.
             GeometryReader { geo in
-                let maxHR = Double(220 - (Int(ageText) ?? profile.age))
-                let low = Double(zone2Low) / maxHR
-                let high = Double(zone2High) / maxHR
+                let maxHR = Double(220 - previewAge)
+                let low = Double(previewZoneLow) / maxHR
+                let high = Double(previewZoneHigh) / maxHR
 
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -233,7 +254,7 @@ struct SettingsView: View {
                     Capsule()
                         .fill(Color.zone2Green)
                         .frame(
-                            width: (high - low) * geo.size.width,
+                            width: max(0, (high - low)) * geo.size.width,
                             height: 8
                         )
                         .offset(x: low * geo.size.width)
@@ -245,7 +266,57 @@ struct SettingsView: View {
         .settingsCard()
     }
 
-    // MARK: - Leg Days Section
+    // MARK: - Coaching
+
+    private var coachingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Coaching")
+
+            if isEditing {
+                Toggle(isOn: $draft.coachingHapticsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Watch Haptic Coaching")
+                            .foregroundColor(.white)
+                        Text("Alert when your heart rate leaves the active target range, then re-arm after you return.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .tint(.zone2Green)
+
+                settingRow("Cooldown") {
+                    Stepper(
+                        "\(draft.coachingAlertCooldown) sec",
+                        value: $draft.coachingAlertCooldown,
+                        in: 10...45,
+                        step: 1
+                    )
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(.white)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Watch Haptic Coaching")
+                            .foregroundColor(.white)
+                            .font(.subheadline)
+                        Text("Alert when your heart rate leaves the active target range.")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                    Text(profile.coachingHapticsEnabled ? "On" : "Off")
+                        .font(.system(.subheadline, design: .monospaced))
+                        .foregroundColor(profile.coachingHapticsEnabled ? .zone2Green : .gray)
+                }
+
+                readOnlyRow("Cooldown", value: "\(profile.coachingAlertCooldownSeconds) sec")
+            }
+        }
+        .settingsCard()
+    }
+
+    // MARK: - Leg Days
 
     private var legDaysSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -255,13 +326,16 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundColor(.gray)
 
+            let source = isEditing ? draft.legDays : profile.legDays
+
             HStack(spacing: 8) {
                 ForEach(weekdaySymbols.indices, id: \.self) { i in
                     let weekday = i + 1
-                    let isSelected = profile.legDays.contains(weekday)
+                    let isSelected = source.contains(weekday)
 
                     Button {
-                        toggleLegDay(weekday)
+                        guard isEditing else { return }
+                        toggleDraftLegDay(weekday)
                     } label: {
                         Text(weekdaySymbols[i])
                             .font(.system(.caption, design: .rounded).bold())
@@ -271,6 +345,8 @@ struct SettingsView: View {
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(!isEditing)
+                    .opacity(isEditing || isSelected ? 1 : 0.75)
                 }
             }
         }
@@ -279,11 +355,11 @@ struct SettingsView: View {
 
     private let weekdaySymbols = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
 
-    private func toggleLegDay(_ weekday: Int) {
-        if profile.legDays.contains(weekday) {
-            profile.legDays.removeAll { $0 == weekday }
+    private func toggleDraftLegDay(_ weekday: Int) {
+        if draft.legDays.contains(weekday) {
+            draft.legDays.removeAll { $0 == weekday }
         } else {
-            profile.legDays.append(weekday)
+            draft.legDays.append(weekday)
         }
     }
 
@@ -291,7 +367,7 @@ struct SettingsView: View {
 
     private var goalSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Goal & Focus")
+            sectionHeader("Coaching Plan")
 
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
@@ -321,8 +397,72 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundColor(.gray)
             }
+
+            Button {
+                openAssessmentEditor()
+            } label: {
+                HStack {
+                    Image(systemName: "slider.horizontal.3")
+                    Text("Edit Assessment")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.gray)
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.zone2Green)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .background(Color.cardBorder)
+                .cornerRadius(10)
+            }
+            .buttonStyle(.plain)
         }
         .settingsCard()
+    }
+
+    private func openAssessmentEditor() {
+        assessmentDraft = AssessmentDraft.from(profile: profile)
+        assessmentOriginalGoal = profile.primaryGoal
+        showingAssessmentEdit = true
+    }
+
+    private func commitAssessmentEdit(resetFocus: Bool) {
+        assessmentDraft.apply(to: profile, resetFocus: resetFocus)
+        profile.accountIdentifier = accountStore.appleUserID
+        showingAssessmentEdit = false
+
+        // Refresh the settings draft in case the user also has edit mode
+        // open — keeps the two in sync so an accidental Save later won't
+        // clobber the assessment commit with stale values.
+        if isEditing {
+            draft = SettingsDraft(profile: profile)
+        }
+
+        // Explicit persist — assessment edits were surviving in-session but
+        // losing on cold relaunch when autosave didn't flush before exit.
+        do {
+            try context.save()
+        } catch {
+            print("Assessment edit commit failed to save: \(error)")
+        }
+
+        ConnectivityManager.shared.sendCompanionProfile(
+            WorkoutPlanningService.companionProfile(
+                from: profile,
+                accountIdentifier: accountStore.appleUserID
+            ),
+            preservePlan: !resetFocus
+        )
+        syncCoordinator.synchronizeIfPossible(
+            accountStore: accountStore,
+            profile: profile,
+            workouts: workouts,
+            context: context
+        )
+
+        flashSavedBanner()
     }
 
     // MARK: - HealthKit Section
@@ -503,31 +643,55 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Data
-
-    private func loadCurrentValues() {
-        ageText = "\(profile.age)"
-        weightText = "\(Int(profile.weight))"
-        let totalInches = Int(profile.height)
-        heightFeet = totalInches / 12
-        heightInches = totalInches % 12
-        zone2Low = profile.zone2TargetLow
-        zone2High = profile.zone2TargetHigh
-        coachingHapticsEnabled = profile.coachingHapticsEnabled
-        coachingAlertCooldown = profile.coachingAlertCooldownSeconds
+    private func readOnlyRow(_ label: String, value: String) -> some View {
+        settingRow(label) {
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .foregroundColor(.white)
+        }
     }
 
-    private func save() {
-        let age = Int(ageText) ?? profile.age
-        profile.age = age
-        profile.maxHR = 220 - age
-        profile.weight = Double(weightText) ?? profile.weight
-        profile.height = Double(heightFeet * 12 + heightInches)
-        profile.zone2TargetLow = min(zone2Low, zone2High - 5)
-        profile.zone2TargetHigh = max(zone2High, zone2Low + 5)
-        profile.coachingHapticsEnabled = coachingHapticsEnabled
-        profile.coachingAlertCooldownSeconds = coachingAlertCooldown
+    private func formatHeight(totalInches: Int) -> String {
+        "\(totalInches / 12) ft \(totalInches % 12) in"
+    }
+
+    // Preview values that reflect the draft when editing, else the persisted profile.
+    private var previewAge: Int {
+        isEditing ? (Int(draft.ageText) ?? profile.age) : profile.age
+    }
+
+    private var previewZoneLow: Int {
+        isEditing ? draft.zone2Low : profile.zone2TargetLow
+    }
+
+    private var previewZoneHigh: Int {
+        isEditing ? draft.zone2High : profile.zone2TargetHigh
+    }
+
+    // MARK: - Edit Lifecycle
+
+    private func beginEditing() {
+        draft = SettingsDraft(profile: profile)
+        withAnimation(.easeInOut(duration: 0.2)) { isEditing = true }
+    }
+
+    private func cancelEditing() {
+        // Discard draft — revert to persisted values.
+        withAnimation(.easeInOut(duration: 0.2)) { isEditing = false }
+        draft = .empty
+    }
+
+    private func saveEditing() {
+        draft.apply(to: profile)
         profile.accountIdentifier = accountStore.appleUserID
+
+        // Explicit persist — profile edits were surviving in-session but
+        // losing on cold relaunch when autosave didn't flush before exit.
+        do {
+            try context.save()
+        } catch {
+            print("Settings edit commit failed to save: \(error)")
+        }
 
         ConnectivityManager.shared.sendCompanionProfile(
             WorkoutPlanningService.companionProfile(
@@ -543,9 +707,13 @@ struct SettingsView: View {
             context: context
         )
 
-        withAnimation(.spring(response: 0.3)) {
-            showingSavedBanner = true
-        }
+        withAnimation(.easeInOut(duration: 0.2)) { isEditing = false }
+        draft = .empty
+        flashSavedBanner()
+    }
+
+    private func flashSavedBanner() {
+        withAnimation(.spring(response: 0.3)) { showingSavedBanner = true }
         Task {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             withAnimation { showingSavedBanner = false }
@@ -555,6 +723,88 @@ struct SettingsView: View {
     private func resetFocus() {
         profile.focus = profile.primaryGoal.initialFocus
         profile.phaseStartDate = Date()
+    }
+}
+
+// MARK: - Settings Draft
+
+/// Local editable state for the settings screen. Never touches
+/// ``UserProfile`` until ``apply(to:)`` is called on Save.
+///
+/// Strings for age / weight keep parity with the `TextField` bindings —
+/// they are coerced at apply-time so intermediate "" or partial input
+/// doesn't corrupt the live profile.
+struct SettingsDraft: Equatable {
+    var ageText: String
+    var weightText: String
+    var heightFeet: Int
+    var heightInches: Int
+    var zone2Low: Int
+    var zone2High: Int
+    var coachingHapticsEnabled: Bool
+    var coachingAlertCooldown: Int
+    var legDays: [Int]
+
+    static let empty = SettingsDraft(
+        ageText: "",
+        weightText: "",
+        heightFeet: 5,
+        heightInches: 8,
+        zone2Low: 130,
+        zone2High: 150,
+        coachingHapticsEnabled: true,
+        coachingAlertCooldown: 18,
+        legDays: []
+    )
+
+    init(
+        ageText: String,
+        weightText: String,
+        heightFeet: Int,
+        heightInches: Int,
+        zone2Low: Int,
+        zone2High: Int,
+        coachingHapticsEnabled: Bool,
+        coachingAlertCooldown: Int,
+        legDays: [Int]
+    ) {
+        self.ageText = ageText
+        self.weightText = weightText
+        self.heightFeet = heightFeet
+        self.heightInches = heightInches
+        self.zone2Low = zone2Low
+        self.zone2High = zone2High
+        self.coachingHapticsEnabled = coachingHapticsEnabled
+        self.coachingAlertCooldown = coachingAlertCooldown
+        self.legDays = legDays
+    }
+
+    init(profile: UserProfile) {
+        let totalInches = Int(profile.height)
+        self.ageText = "\(profile.age)"
+        self.weightText = "\(Int(profile.weight))"
+        self.heightFeet = max(4, min(7, totalInches / 12))
+        self.heightInches = max(0, min(11, totalInches % 12))
+        self.zone2Low = profile.zone2TargetLow
+        self.zone2High = profile.zone2TargetHigh
+        self.coachingHapticsEnabled = profile.coachingHapticsEnabled
+        self.coachingAlertCooldown = profile.coachingAlertCooldownSeconds
+        self.legDays = profile.legDays
+    }
+
+    /// Commit the draft back to `profile`. Coerces string inputs and
+    /// enforces an always-valid zone window (≥5 bpm gap).
+    func apply(to profile: UserProfile) {
+        let age = Int(ageText) ?? profile.age
+        profile.age = age
+        profile.maxHR = 220 - age
+        profile.weight = Double(weightText) ?? profile.weight
+        profile.height = Double(heightFeet * 12 + heightInches)
+        profile.zone2TargetLow = min(zone2Low, zone2High - 5)
+        profile.zone2TargetHigh = max(zone2High, zone2Low + 5)
+        profile.coachingHapticsEnabled = coachingHapticsEnabled
+        profile.coachingAlertCooldownSeconds = coachingAlertCooldown
+        profile.legDays = legDays.sorted()
     }
 }
 

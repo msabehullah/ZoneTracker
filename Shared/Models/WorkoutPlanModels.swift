@@ -109,8 +109,86 @@ struct WorkoutCompletionPayload: Codable, Equatable, Identifiable, Sendable {
     var completedSegments: Int
     var plannedSegments: Int
     var notes: String?
+    /// Total distance covered (meters). 0 for modalities that don't yield
+    /// HealthKit distance (e.g. stationary bike without cadence sensor).
+    var distanceMeters: Double
+    /// Wall-clock seconds spent with heart rate inside the target zone.
+    /// Drives plan-adherence UI and progression gating on the phone.
+    var timeInTarget: TimeInterval
 
     var duration: TimeInterval {
         endedAt.timeIntervalSince(startedAt)
+    }
+
+    // MARK: - Codable (backward-compatible defaults)
+    //
+    // Older watch builds sent payloads without distance / timeInTarget. Decode
+    // those as 0 rather than failing the ingest — a completion with missing
+    // metrics is still better than a dropped workout.
+
+    private enum CodingKeys: String, CodingKey {
+        case id, planIdentifier, recommendationIdentifier, accountIdentifier,
+             profileIdentifier, startedAt, endedAt, sessionType, exerciseType,
+             intervalProtocol, calories, heartRateData, completedSegments,
+             plannedSegments, notes, distanceMeters, timeInTarget
+    }
+
+    init(
+        id: String,
+        planIdentifier: String? = nil,
+        recommendationIdentifier: String? = nil,
+        accountIdentifier: String? = nil,
+        profileIdentifier: String? = nil,
+        startedAt: Date,
+        endedAt: Date,
+        sessionType: SessionType,
+        exerciseType: ExerciseType,
+        intervalProtocol: IntervalProtocol? = nil,
+        calories: Double,
+        heartRateData: HeartRateData,
+        completedSegments: Int,
+        plannedSegments: Int,
+        notes: String? = nil,
+        distanceMeters: Double = 0,
+        timeInTarget: TimeInterval = 0
+    ) {
+        self.id = id
+        self.planIdentifier = planIdentifier
+        self.recommendationIdentifier = recommendationIdentifier
+        self.accountIdentifier = accountIdentifier
+        self.profileIdentifier = profileIdentifier
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.sessionType = sessionType
+        self.exerciseType = exerciseType
+        self.intervalProtocol = intervalProtocol
+        self.calories = calories
+        self.heartRateData = heartRateData
+        self.completedSegments = completedSegments
+        self.plannedSegments = plannedSegments
+        self.notes = notes
+        self.distanceMeters = distanceMeters
+        self.timeInTarget = timeInTarget
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.planIdentifier = try c.decodeIfPresent(String.self, forKey: .planIdentifier)
+        self.recommendationIdentifier = try c.decodeIfPresent(String.self, forKey: .recommendationIdentifier)
+        self.accountIdentifier = try c.decodeIfPresent(String.self, forKey: .accountIdentifier)
+        self.profileIdentifier = try c.decodeIfPresent(String.self, forKey: .profileIdentifier)
+        self.startedAt = try c.decode(Date.self, forKey: .startedAt)
+        self.endedAt = try c.decode(Date.self, forKey: .endedAt)
+        self.sessionType = try c.decode(SessionType.self, forKey: .sessionType)
+        self.exerciseType = try c.decode(ExerciseType.self, forKey: .exerciseType)
+        self.intervalProtocol = try c.decodeIfPresent(IntervalProtocol.self, forKey: .intervalProtocol)
+        self.calories = try c.decode(Double.self, forKey: .calories)
+        self.heartRateData = try c.decode(HeartRateData.self, forKey: .heartRateData)
+        self.completedSegments = try c.decode(Int.self, forKey: .completedSegments)
+        self.plannedSegments = try c.decode(Int.self, forKey: .plannedSegments)
+        self.notes = try c.decodeIfPresent(String.self, forKey: .notes)
+        self.distanceMeters = try c.decodeIfPresent(Double.self, forKey: .distanceMeters) ?? 0
+        self.timeInTarget = try c.decodeIfPresent(TimeInterval.self, forKey: .timeInTarget) ?? 0
     }
 }

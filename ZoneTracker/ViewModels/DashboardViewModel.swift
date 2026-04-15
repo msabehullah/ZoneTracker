@@ -92,7 +92,7 @@ class DashboardViewModel {
         defaults?.set(profile.weekNumber, forKey: "widget_weekNumber")
         defaults?.set(sessionsThisWeek, forKey: "widget_sessionsThisWeek")
         defaults?.set(targetSessionsThisWeek, forKey: "widget_targetSessions")
-        defaults?.set(nextRecommendation?.sessionType.displayName ?? "Target Zone", forKey: "widget_nextSessionType")
+        defaults?.set(nextRecommendation?.sessionType.coachingLabel ?? "Target Zone", forKey: "widget_nextSessionType")
         defaults?.set(nextRecommendation?.targetDurationMinutes ?? 30, forKey: "widget_nextDuration")
         WidgetCenter.shared.reloadAllTimelines()
     }

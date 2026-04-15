@@ -15,10 +15,12 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     @Published var averageHR: Int = 0
     @Published var maxHR: Int = 0
     @Published var timeInActiveTarget: TimeInterval = 0
+    @Published var distanceMeters: Double = 0
     @Published var coachingPosition: HeartRateTargetPosition = .unavailable
     @Published var activeSegmentTitle: String = "Ready"
     @Published var activeTargetText: String = "—"
     @Published var workoutTitle: String = "Next Workout"
+    @Published var activeExerciseType: ExerciseType = .treadmill
 
     @Published var summaryAvgHR: Int = 0
     @Published var summaryMaxHR: Int = 0
@@ -55,6 +57,45 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         timeInActiveTarget.minutesAndSeconds
     }
 
+    // MARK: - Distance & Pace
+
+    /// True when the active exercise type is one whose distance/pace are
+    /// meaningful and tracked by HealthKit's distance quantity samples.
+    var supportsDistance: Bool {
+        switch activeExerciseType {
+        case .treadmill, .outdoorRun, .rucking, .bike: return true
+        case .elliptical, .stairClimber, .rowing, .swimming: return false
+        }
+    }
+
+    /// Display-ready distance in miles (e.g., "1.24 mi"). Empty placeholder
+    /// when the modality doesn't track distance or no samples have arrived yet.
+    var formattedDistance: String {
+        guard supportsDistance else { return "—" }
+        let miles = distanceMeters / 1609.344
+        if miles < 0.01 { return "0.00 mi" }
+        return String(format: "%.2f mi", miles)
+    }
+
+    /// Display-ready average pace in min/mi for the session so far. Falls back
+    /// to "—" when distance is too small to compute a stable pace, or when the
+    /// modality doesn't support pace.
+    var formattedPace: String {
+        guard supportsDistance else { return "—" }
+        let miles = distanceMeters / 1609.344
+        // Need a meaningful sample before pace stabilizes.
+        guard miles >= 0.05, elapsedTime > 10 else { return "—" }
+        let secondsPerMile = elapsedTime / miles
+        let minutes = Int(secondsPerMile) / 60
+        let seconds = Int(secondsPerMile) % 60
+        return String(format: "%d:%02d /mi", minutes, seconds)
+    }
+
+    /// Secondary live label used by views when pace doesn't apply (bike RPM
+    /// would require a cadence sensor we don't read, so fall back to calories).
+    var fallbackSecondaryLabel: String { "CAL" }
+    var fallbackSecondaryValue: String { "\(Int(activeCalories))" }
+
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var timerCancellable: AnyCancellable?
@@ -64,6 +105,9 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     private var telemetry: WatchWorkoutTelemetry?
     private var coachingEngine = HeartRateCoachingEngine()
     private var lastSegmentIdentifier: String?
+    /// Fires exactly once per session when the elapsed time first crosses the
+    /// planned target duration. Reset in `resetSessionState`.
+    private var workoutFinishedAlertFired: Bool = false
 
     func requestAuthorization() async {
         let typesToShare: Set<HKSampleType> = [HKObjectType.workoutType()]
@@ -71,6 +115,7 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
             HKQuantityType(.heartRate),
             HKQuantityType(.activeEnergyBurned),
             HKQuantityType(.distanceWalkingRunning),
+            HKQuantityType(.distanceCycling),
             HKObjectType.workoutType()
         ]
 
@@ -171,6 +216,7 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         telemetry = WatchWorkoutTelemetry(zoneClassifier: classifier)
         coachingEngine.reset()
         lastSegmentIdentifier = nil
+        workoutFinishedAlertFired = false
 
         heartRate = 0
         currentZone = 1
@@ -179,6 +225,8 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         averageHR = 0
         maxHR = 0
         timeInActiveTarget = 0
+        distanceMeters = 0
+        activeExerciseType = plan.exerciseType
         coachingPosition = .unavailable
         activeSegmentTitle = plan.segments.first?.title ?? plan.sessionType.displayName
         activeTargetText = plan.overallTargetRange.displayText
@@ -223,7 +271,9 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
             heartRateData: telemetry.makeHeartRateData(),
             completedSegments: completedSegmentCount(at: endDate),
             plannedSegments: activePlan?.segments.count ?? 1,
-            notes: activePlan?.isFreeWorkout == true ? "Free workout" : nil
+            notes: activePlan?.isFreeWorkout == true ? "Free workout" : nil,
+            distanceMeters: distanceMeters,
+            timeInTarget: telemetry.timeInTarget
         )
         WatchConnectivityManager.shared.sendWorkoutCompletion(payload)
     }
@@ -238,7 +288,35 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
                 self.telemetry?.advance(to: currentDate, targetRange: self.currentTargetRange)
                 self.timeInActiveTarget = self.telemetry?.timeInTarget ?? 0
                 self.updateActiveSegment(at: currentDate)
+                self.checkWorkoutFinishedAlert()
             }
+    }
+
+    /// Fires a one-shot noticeable haptic + banner text when elapsed time
+    /// first meets or crosses the planned target duration. The user can keep
+    /// training after this fires — the alert is informational, not a stop.
+    private func checkWorkoutFinishedAlert() {
+        guard !workoutFinishedAlertFired,
+              let activePlan,
+              activePlan.targetDuration > 0,
+              elapsedTime >= activePlan.targetDuration else { return }
+
+        workoutFinishedAlertFired = true
+        activeSegmentTitle = "Target Reached"
+        playWorkoutFinishedHaptic()
+    }
+
+    /// Attention-grabbing finished pattern: `.notification` immediately, then
+    /// a follow-up `.success` so it reads as distinctly different from an
+    /// in-target nudge.
+    private func playWorkoutFinishedHaptic() {
+        WKInterfaceDevice.current().play(.notification)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            WKInterfaceDevice.current().play(.success)
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            WKInterfaceDevice.current().play(.notification)
+        }
     }
 
     private func updateActiveSegment(at currentDate: Date) {
@@ -297,11 +375,23 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
     }
 
     private func playHaptic(for alert: HeartRateCoachingAlert) {
+        // Single pulses were too easy to miss on-wrist, especially mid-run.
+        // Double-pulse patterns for out-of-range alerts give them a
+        // distinctive rhythm the wrist actually notices; `.backInTarget`
+        // stays a single `.success` chirp so it reads as "you're fine".
         switch alert {
         case .belowTarget:
-            WKInterfaceDevice.current().play(.directionUp)
+            WKInterfaceDevice.current().play(.notification)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                WKInterfaceDevice.current().play(.directionUp)
+            }
         case .aboveTarget:
-            WKInterfaceDevice.current().play(.directionDown)
+            WKInterfaceDevice.current().play(.notification)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                WKInterfaceDevice.current().play(.directionDown)
+            }
         case .backInTarget:
             WKInterfaceDevice.current().play(.success)
         case .none:
@@ -361,6 +451,7 @@ final class WatchWorkoutManager: NSObject, ObservableObject {
         case .rowing: return .rowing
         case .outdoorRun: return .running
         case .rucking: return .hiking
+        case .swimming: return .swimming
         }
     }
 
@@ -415,6 +506,10 @@ extension WatchWorkoutManager: HKLiveWorkoutBuilderDelegate {
                     }
                 case HKQuantityType(.activeEnergyBurned):
                     self.activeCalories = statistics?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                case HKQuantityType(.distanceWalkingRunning), HKQuantityType(.distanceCycling):
+                    if let meters = statistics?.sumQuantity()?.doubleValue(for: .meter()) {
+                        self.distanceMeters = meters
+                    }
                 default:
                     break
                 }

@@ -3,24 +3,34 @@ import SwiftUI
 struct LiveWorkoutView: View {
     @EnvironmentObject var manager: WatchWorkoutManager
     @State private var showingEndConfirm = false
+    @State private var selectedPage: Page = .coaching
+
+    private enum Page: Hashable {
+        case coaching
+        case progress
+        case metrics
+        case controls
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
-            GeometryReader { geometry in
-                let m = LiveWorkoutLayoutMetrics(size: geometry.size)
+            TabView(selection: $selectedPage) {
+                CoachingPage(manager: manager, statusColor: statusColor)
+                    .tag(Page.coaching)
 
-                VStack(spacing: m.sectionSpacing) {
-                    coachingBanner(m: m)
-                    heartRateHero(m: m)
-                    adherenceBar(m: m)
-                    statsRow(m: m)
-                    controlButtons(m: m)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.horizontal, m.horizontalPadding)
-                .padding(.top, m.topPadding)
-                .padding(.bottom, m.bottomPadding)
+                ProgressPage(manager: manager, statusColor: statusColor, adherenceFraction: adherenceFraction)
+                    .tag(Page.progress)
+
+                MetricsPage(manager: manager)
+                    .tag(Page.metrics)
+
+                ControlsPage(
+                    manager: manager,
+                    showingEndConfirm: $showingEndConfirm
+                )
+                .tag(Page.controls)
             }
+            .tabViewStyle(.verticalPage)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -31,200 +41,6 @@ struct LiveWorkoutView: View {
             Button("Cancel", role: .cancel) {}
         }
     }
-
-    // MARK: - Coaching Banner
-
-    private func coachingBanner(m: LiveWorkoutLayoutMetrics) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: m.statusDotSize, height: m.statusDotSize)
-
-            Text(manager.coachingMessage)
-                .font(.system(size: m.coachingTextSize, weight: .bold, design: .rounded))
-                .foregroundColor(statusColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            Spacer(minLength: 4)
-
-            Text(manager.zoneBadge)
-                .font(.system(size: m.zoneBadgeTextSize, weight: .heavy, design: .monospaced))
-                .foregroundColor(statusColor)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(statusColor.opacity(0.18))
-                .clipShape(Capsule())
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - Heart Rate Hero
-
-    private func heartRateHero(m: LiveWorkoutLayoutMetrics) -> some View {
-        VStack(spacing: m.heroSpacing) {
-            // Heart rate number — the dominant element
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text("\(manager.heartRate)")
-                    .font(.system(size: m.heartRateSize, weight: .bold, design: .rounded))
-                    .foregroundColor(statusColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .contentTransition(.numericText())
-
-                Text("bpm")
-                    .font(.system(size: m.bpmLabelSize, weight: .medium, design: .rounded))
-                    .foregroundColor(statusColor.opacity(0.6))
-            }
-
-            // Target range + segment
-            HStack(spacing: 6) {
-                Text(manager.activeTargetText)
-                    .font(.system(size: m.targetTextSize, weight: .medium, design: .monospaced))
-                    .foregroundColor(.gray)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
-                if m.showsSegmentInline {
-                    Text("·")
-                        .foregroundColor(.gray.opacity(0.5))
-                    Text(manager.activeSegmentTitle)
-                        .font(.system(size: m.targetTextSize, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white.opacity(0.7))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Adherence Bar
-
-    private func adherenceBar(m: LiveWorkoutLayoutMetrics) -> some View {
-        VStack(spacing: m.adherenceSpacing) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.gray.opacity(0.25))
-                        .frame(height: m.adherenceBarHeight)
-                    Capsule()
-                        .fill(statusColor)
-                        .frame(
-                            width: max(0, geo.size.width * adherenceFraction),
-                            height: m.adherenceBarHeight
-                        )
-                        .animation(.easeInOut(duration: 0.5), value: adherenceFraction)
-                }
-            }
-            .frame(height: m.adherenceBarHeight)
-
-            HStack {
-                Text(manager.formattedElapsed)
-                    .font(.system(size: m.timeTextSize, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-
-                Spacer()
-
-                Text("\(manager.adherencePercent)% on target")
-                    .font(.system(size: m.timeTextSize, weight: .medium, design: .monospaced))
-                    .foregroundColor(statusColor.opacity(0.8))
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Stats Row
-
-    private func statsRow(m: LiveWorkoutLayoutMetrics) -> some View {
-        HStack(spacing: m.metricSpacing) {
-            metricColumn(title: "AVG", value: "\(manager.averageHR)", color: .white, m: m)
-            metricColumn(title: "MAX", value: "\(manager.maxHR)", color: .orange, m: m)
-            metricColumn(title: "CAL", value: "\(Int(manager.activeCalories))", color: .white, m: m)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func metricColumn(
-        title: String,
-        value: String,
-        color: Color,
-        m: LiveWorkoutLayoutMetrics
-    ) -> some View {
-        VStack(spacing: m.metricTextSpacing) {
-            Text(title)
-                .font(.system(size: m.metricTitleSize, weight: .medium, design: .rounded))
-                .foregroundColor(.gray)
-
-            Text(value)
-                .font(.system(size: m.metricValueSize, weight: .semibold, design: .monospaced))
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Controls
-
-    private func controlButtons(m: LiveWorkoutLayoutMetrics) -> some View {
-        HStack(spacing: m.buttonSpacing) {
-            if manager.sessionState == .running {
-                Button {
-                    manager.pause()
-                } label: {
-                    controlIcon(
-                        "pause.fill",
-                        foreground: .yellow,
-                        background: Color.yellow.opacity(0.2),
-                        m: m
-                    )
-                }
-                .buttonStyle(.plain)
-            } else if manager.sessionState == .paused {
-                Button {
-                    manager.resume()
-                } label: {
-                    controlIcon(
-                        "play.fill",
-                        foreground: .green,
-                        background: Color.green.opacity(0.2),
-                        m: m
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-
-            Button {
-                showingEndConfirm = true
-            } label: {
-                controlIcon(
-                    "xmark",
-                    foreground: .red,
-                    background: Color.red.opacity(0.2),
-                    m: m
-                )
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func controlIcon(
-        _ systemName: String,
-        foreground: Color,
-        background: Color,
-        m: LiveWorkoutLayoutMetrics
-    ) -> some View {
-        Image(systemName: systemName)
-            .font(m.buttonIconFont)
-            .foregroundColor(foreground)
-            .frame(width: m.buttonSize, height: m.buttonSize)
-            .background(background)
-            .clipShape(Circle())
-    }
-
-    // MARK: - Computed
 
     private var adherenceFraction: CGFloat {
         guard manager.elapsedTime > 0 else { return 0 }
@@ -241,80 +57,291 @@ struct LiveWorkoutView: View {
     }
 }
 
-// MARK: - Layout Metrics
+// MARK: - Coaching Page
 
-private struct LiveWorkoutLayoutMetrics {
-    let horizontalPadding: CGFloat
-    let topPadding: CGFloat
-    let bottomPadding: CGFloat
-    let sectionSpacing: CGFloat
-    let showsSegmentInline: Bool
+private struct CoachingPage: View {
+    @ObservedObject var manager: WatchWorkoutManager
+    let statusColor: Color
 
-    // Coaching banner
-    let statusDotSize: CGFloat
-    let coachingTextSize: CGFloat
-    let zoneBadgeTextSize: CGFloat
+    var body: some View {
+        VStack(spacing: 6) {
+            topBar
 
-    // Heart rate hero
-    let heartRateSize: CGFloat
-    let bpmLabelSize: CGFloat
-    let heroSpacing: CGFloat
-    let targetTextSize: CGFloat
+            Spacer(minLength: 0)
 
-    // Adherence
-    let adherenceBarHeight: CGFloat
-    let adherenceSpacing: CGFloat
-    let timeTextSize: CGFloat
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text("\(manager.heartRate)")
+                    .font(.system(size: 54, weight: .bold, design: .rounded))
+                    .foregroundColor(statusColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+                Text("bpm")
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundColor(statusColor.opacity(0.6))
+            }
 
-    // Stats
-    let metricSpacing: CGFloat
-    let metricTextSpacing: CGFloat
-    let metricTitleSize: CGFloat
-    let metricValueSize: CGFloat
+            Text(manager.activeTargetText)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(.gray)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
-    // Controls
-    let buttonSize: CGFloat
-    let buttonSpacing: CGFloat
-    let buttonIconFont: Font
+            Text(manager.coachingMessage)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(statusColor)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
-    init(size: CGSize) {
-        let width = max(size.width, 136)
-        let height = max(size.height, 170)
-        let scale = min(max(min(width / 184, height / 224), 0.72), 1.18)
-        let compact = width < 176 || height < 212
+            Spacer(minLength: 0)
 
-        horizontalPadding = compact ? max(6, 8 * scale) : max(8, 10 * scale)
-        topPadding = compact ? max(4, 5 * scale) : max(6, 7 * scale)
-        bottomPadding = compact ? max(2, 3 * scale) : max(4, 5 * scale)
-        sectionSpacing = compact ? max(3, 4 * scale) : max(5, 6 * scale)
-        showsSegmentInline = !compact
+            metricsStrip
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
 
-        // Coaching banner
-        statusDotSize = max(6, 8 * scale)
-        coachingTextSize = max(10, 12 * scale)
-        zoneBadgeTextSize = max(9, 11 * scale)
+    private var topBar: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+            Text(manager.zoneBadge)
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundColor(statusColor)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(statusColor.opacity(0.18))
+                .clipShape(Capsule())
+            Spacer()
+            Text(manager.formattedElapsed)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.85))
+                .contentTransition(.numericText())
+        }
+    }
 
-        // Heart rate — the hero element, as large as possible
-        heartRateSize = compact ? max(36, 48 * scale) : max(44, 56 * scale)
-        bpmLabelSize = max(10, 13 * scale)
-        heroSpacing = compact ? 1 : 2
-        targetTextSize = max(10, 11.5 * scale)
+    private var metricsStrip: some View {
+        HStack(spacing: 6) {
+            if manager.supportsDistance {
+                metricCell(label: "DIST", value: manager.formattedDistance)
+                metricCell(label: "PACE", value: manager.formattedPace)
+            } else {
+                metricCell(label: "CAL", value: manager.fallbackSecondaryValue)
+                metricCell(label: "AVG HR", value: "\(manager.averageHR)")
+            }
+            metricCell(
+                label: "ON TGT",
+                value: "\(manager.adherencePercent)%",
+                tint: statusColor
+            )
+        }
+    }
 
-        // Adherence bar
-        adherenceBarHeight = max(4, 5 * scale)
-        adherenceSpacing = compact ? 2 : 3
-        timeTextSize = max(9, 10.5 * scale)
+    private func metricCell(
+        label: String,
+        value: String,
+        tint: Color = .white
+    ) -> some View {
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy, design: .rounded))
+                .foregroundColor(.gray)
+            Text(value)
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundColor(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .contentTransition(.numericText())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .background(Color(white: 0.12))
+        .cornerRadius(7)
+    }
+}
 
-        // Stats row
-        metricSpacing = compact ? max(4, 5 * scale) : max(8, 9 * scale)
-        metricTextSpacing = compact ? 0 : 1
-        metricTitleSize = max(7, 8.5 * scale)
-        metricValueSize = max(10, 14 * scale)
+// MARK: - Progress Page
 
-        // Controls
-        buttonSize = compact ? max(28, 34 * scale) : max(34, 40 * scale)
-        buttonSpacing = compact ? max(8, 10 * scale) : max(12, 14 * scale)
-        let ringScale = min(max(scale, 0.68), 1.16)
-        buttonIconFont = ringScale < 0.82 ? .footnote.weight(.semibold) : (compact ? .body : .title3)
+private struct ProgressPage: View {
+    @ObservedObject var manager: WatchWorkoutManager
+    let statusColor: Color
+    let adherenceFraction: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("ELAPSED")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.gray)
+                Text(manager.formattedElapsed)
+                    .font(.system(size: 34, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .contentTransition(.numericText())
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("ON TARGET")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text("\(manager.adherencePercent)%")
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(statusColor)
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.gray.opacity(0.25))
+                        Capsule()
+                            .fill(statusColor)
+                            .frame(width: max(0, geo.size.width * adherenceFraction))
+                            .animation(.easeInOut(duration: 0.5), value: adherenceFraction)
+                    }
+                }
+                .frame(height: 6)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("SEGMENT")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.gray)
+                Text(manager.activeSegmentTitle)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Metrics Page
+
+private struct MetricsPage: View {
+    @ObservedObject var manager: WatchWorkoutManager
+
+    var body: some View {
+        VStack(spacing: 10) {
+            metricRow(title: "AVG HR", value: "\(manager.averageHR)", unit: "bpm", color: .white)
+            metricRow(title: "MAX HR", value: "\(manager.maxHR)", unit: "bpm", color: .orange)
+            metricRow(title: "CALORIES", value: "\(Int(manager.activeCalories))", unit: "kcal", color: .white)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private func metricRow(title: String, value: String, unit: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.gray)
+            Spacer()
+            Text(value)
+                .font(.system(size: 22, weight: .semibold, design: .monospaced))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .contentTransition(.numericText())
+            Text(unit)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color(white: 0.12))
+        .cornerRadius(10)
+    }
+}
+
+// MARK: - Controls Page
+
+private struct ControlsPage: View {
+    @ObservedObject var manager: WatchWorkoutManager
+    @Binding var showingEndConfirm: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text(sessionStateLabel)
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.gray)
+
+            if manager.sessionState == .running {
+                controlButton(
+                    title: "Pause",
+                    systemName: "pause.fill",
+                    tint: .yellow
+                ) {
+                    manager.pause()
+                }
+            } else if manager.sessionState == .paused {
+                controlButton(
+                    title: "Resume",
+                    systemName: "play.fill",
+                    tint: .green
+                ) {
+                    manager.resume()
+                }
+            }
+
+            controlButton(
+                title: "End Workout",
+                systemName: "xmark",
+                tint: .red
+            ) {
+                showingEndConfirm = true
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private var sessionStateLabel: String {
+        switch manager.sessionState {
+        case .running: return "WORKOUT IN PROGRESS"
+        case .paused: return "PAUSED"
+        default: return "CONTROLS"
+        }
+    }
+
+    private func controlButton(
+        title: String,
+        systemName: String,
+        tint: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: systemName)
+                    .font(.system(size: 14, weight: .bold))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 14)
+            .background(tint.opacity(0.18))
+            .cornerRadius(10)
+        }
+        .buttonStyle(.plain)
     }
 }

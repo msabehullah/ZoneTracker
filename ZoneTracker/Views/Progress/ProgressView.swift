@@ -80,7 +80,7 @@ struct ProgressDashboardView: View {
 
             HStack(spacing: 12) {
                 timelineMetric(title: "Started", value: currentItem.startDate.shortDate)
-                timelineMetric(title: "Target", value: "\(currentItem.focus.targetSessionsPerWeek)×/week")
+                timelineMetric(title: "Target", value: "\(profile.effectiveSessionsPerWeek)×/week")
                 timelineMetric(title: "Status", value: currentItem.endDate == nil ? "Current" : "Completed")
             }
         }

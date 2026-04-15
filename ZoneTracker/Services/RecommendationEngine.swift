@@ -11,9 +11,9 @@ struct RecommendationEngine {
     ) -> WorkoutRecommendation {
         let sorted = workouts.sorted { $0.date > $1.date }
 
-        // No history — return default first workout
+        // No history — delegate to the explicit first-workout decision model.
         guard let lastWorkout = sorted.first else {
-            return .defaultFirstWorkout(profile: profile)
+            return FirstWorkoutStrategy.recommend(for: profile)
         }
 
         // Check consistency: if user missed 2+ sessions, repeat last week
@@ -335,6 +335,13 @@ struct RecommendationEngine {
             if let pace = adjusted["pace"] {
                 adjusted["pace"] = max(12, min(25, pace - sign * 0.25))
             }
+
+        case .swimming:
+            if let pace = adjusted["pace"] {
+                adjusted["pace"] = max(1.2, min(4.0, pace - sign * 0.05))
+            } else if let strokeRate = adjusted["strokeRate"] {
+                adjusted["strokeRate"] = max(20, min(80, strokeRate + sign * 2))
+            }
         }
 
         return adjusted
@@ -453,7 +460,7 @@ struct RecommendationEngine {
         return applyLowImpactFilter(candidate, profile: profile)
     }
 
-    private static let lowImpactTypes: Set<ExerciseType> = [.bike, .elliptical, .rowing]
+    private static let lowImpactTypes: Set<ExerciseType> = [.bike, .elliptical, .rowing, .swimming]
 
     private static func applyLowImpactFilter(_ type: ExerciseType, profile: UserProfile) -> ExerciseType {
         guard profile.prefersLowImpact else { return type }

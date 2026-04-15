@@ -41,8 +41,8 @@ struct WorkoutSummaryView: View {
                     .padding(.top, 4)
                 }
                 .padding(12)
-                .background(Color(white: 0.15))
-                .cornerRadius(12)
+                .background(Color(white: 0.12))
+                .cornerRadius(14)
 
                 Button("Done") {
                     dismiss()

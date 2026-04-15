@@ -5,11 +5,19 @@ import SwiftData
 
 @main
 struct ZoneTrackerApp: App {
+    /// Shared local-only SwiftData container. See `LocalModelContainer` for the
+    /// full rationale — short version: cloud backup is handled manually via
+    /// `CloudSyncService`, so the SwiftData store opts out of automatic
+    /// CloudKit mirroring (which would fail schema validation against this
+    /// model anyway — `@Attribute(.unique)` and non-optional fields without
+    /// defaults are not supported by CloudKit-backed SwiftData).
+    let modelContainer: ModelContainer = LocalModelContainer.make()
+
     var body: some Scene {
         WindowGroup {
             AppRootView()
         }
-        .modelContainer(for: [WorkoutEntry.self, UserProfile.self])
+        .modelContainer(modelContainer)
     }
 }
 
@@ -104,12 +112,16 @@ struct AppRootView: View {
         guard profiles.isEmpty, createdProfile == nil else { return }
         let profile = UserProfile(accountIdentifier: accountStore.appleUserID)
         context.insert(profile)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            print("Failed to persist newly created profile: \(error)")
+        }
         createdProfile = profile
     }
 
     private func installWatchCompletionHandler() {
-        ConnectivityManager.shared.onWorkoutCompletionReceived = { payload in
+        ConnectivityManager.shared.setWorkoutCompletionHandler { payload in
             let profileDescriptor = FetchDescriptor<UserProfile>()
             let workoutDescriptor = FetchDescriptor<WorkoutEntry>(
                 sortBy: [SortDescriptor(\WorkoutEntry.date, order: .reverse)]

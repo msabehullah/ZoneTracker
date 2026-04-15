@@ -14,6 +14,12 @@ final class UserProfile {
     var currentPhase: String = TrainingPhase.phase1.rawValue // TrainingPhase rawValue
     var phaseStartDate: Date = Date()
     var hasCompletedOnboarding: Bool = false
+    /// True once the user has committed their assessment answers but *before*
+    /// they tap "Start Coaching" on the plan-overview handoff. Lets the app
+    /// reopen into the plan-overview screen if the user closes the app between
+    /// assessment submission and the final handoff, instead of either
+    /// restarting the assessment or skipping the handoff entirely.
+    var hasSubmittedAssessment: Bool = false
     var zone2TargetLow: Int = 130  // customizable target zone floor
     var zone2TargetHigh: Int = 150 // customizable target zone ceiling
     var legDays: [Int] = []        // weekday indices (1=Sun, 2=Mon, ..., 7=Sat) for heavy leg days
@@ -55,6 +61,7 @@ final class UserProfile {
         self.currentPhase = TrainingPhase.phase1.rawValue
         self.phaseStartDate = Date()
         self.hasCompletedOnboarding = false
+        self.hasSubmittedAssessment = false
         self.zone2TargetLow = zone2TargetLow
         self.zone2TargetHigh = zone2TargetHigh
         self.legDays = []
