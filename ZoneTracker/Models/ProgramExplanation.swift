@@ -33,20 +33,22 @@ struct ProgramExplanation: Equatable {
 
     /// Build the explanation from a profile and the recommended first workout.
     /// Pass the recommendation explicitly so the explanation matches exactly
-    /// what the user is about to see queued up — no double-derivation.
+    /// what the user is about to see queued up — the copy derives from the
+    /// passed `firstWorkout` (its session type, modality, interval protocol),
+    /// never re-derived from the profile. That's how we keep "mile benchmark"
+    /// copy from showing up when the actual queued workout has been rewritten
+    /// to an aerobic-support session for a non-running user.
     static func build(
         profile: UserProfile,
         firstWorkout: WorkoutRecommendation
     ) -> ProgramExplanation {
-        let shape = FirstWorkoutStrategy.decideShape(for: profile)
-
         return ProgramExplanation(
             headline: makeHeadline(for: profile),
             subhead: makeSubhead(for: profile),
             sections: [
                 goalSection(profile: profile),
                 weeklyStructureSection(profile: profile, firstWorkout: firstWorkout),
-                firstWorkoutSection(profile: profile, firstWorkout: firstWorkout, shape: shape),
+                firstWorkoutSection(profile: profile, firstWorkout: firstWorkout),
                 progressionSection(profile: profile),
                 watchCoachingSection(profile: profile)
             ]
@@ -130,18 +132,29 @@ struct ProgramExplanation: Equatable {
         let sessions = profile.effectiveSessionsPerWeek
         let zoneSessions = profile.effectiveTargetZoneSessions
         let intervalSessions = profile.effectiveIntervalSessions
+        let ceiling = profile.availableSessionsCeiling
 
         let intro: String
         if intervalSessions == 0 {
-            intro = "We'll aim for \(sessions) cardio sessions a week, all in your target heart-rate zone. Easy intensity, real volume."
+            intro = "We'll start at \(sessions) cardio session\(sessions == 1 ? "" : "s") a week, all in your target heart-rate zone. Easy intensity, real volume."
         } else {
-            intro = "We'll aim for \(sessions) cardio sessions a week — the bulk in your target zone, with \(intervalSessions) harder day\(intervalSessions == 1 ? "" : "s") to push your ceiling."
+            intro = "We'll start at \(sessions) cardio sessions a week — the bulk in your target zone, with \(intervalSessions) harder day\(intervalSessions == 1 ? "" : "s") to push your ceiling."
+        }
+
+        let rampLine: String
+        if profile.hasHeadroomToBuild {
+            rampLine = "You said you have room for up to \(ceiling) days a week — we'll grow into that as the weeks add up, not on day one."
+        } else {
+            rampLine = ""
         }
 
         let zoneLine = "Target zone: \(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm. That's the sweet spot where you're working but could still hold a conversation."
 
         var bullets: [String] = []
-        bullets.append("\(sessions) sessions a week")
+        bullets.append("Starting at \(sessions) session\(sessions == 1 ? "" : "s") a week")
+        if profile.hasHeadroomToBuild {
+            bullets.append("Building toward \(ceiling) day\(ceiling == 1 ? "" : "s") a week")
+        }
         bullets.append("\(zoneSessions) target-zone day\(zoneSessions == 1 ? "" : "s")")
         if intervalSessions > 0 {
             bullets.append("\(intervalSessions) interval day\(intervalSessions == 1 ? "" : "s")")
@@ -151,11 +164,15 @@ struct ProgramExplanation: Equatable {
             bullets.append("No intervals yet — base first")
         }
 
+        let body = rampLine.isEmpty
+            ? "\(intro) \(zoneLine)"
+            : "\(intro) \(rampLine) \(zoneLine)"
+
         return Section(
             id: "weeklyStructure",
             icon: "calendar",
             title: "How a week looks",
-            body: "\(intro) \(zoneLine)",
+            body: body,
             bullets: bullets
         )
     }
@@ -164,28 +181,41 @@ struct ProgramExplanation: Equatable {
 
     private static func firstWorkoutSection(
         profile: UserProfile,
-        firstWorkout: WorkoutRecommendation,
-        shape: FirstWorkoutStrategy.Shape
+        firstWorkout: WorkoutRecommendation
     ) -> Section {
         let modalityName = firstWorkout.exerciseType.displayName
+        let modalityLower = modalityName.lowercased()
         let minutes = firstWorkout.targetDurationMinutes
 
+        // Copy derives from the actual passed workout, not the profile's
+        // untouched intent. sessionType → interval protocol → modality
+        // together describe what the user is literally about to do.
         let body: String
-        switch shape {
-        case .easyTargetZoneIntro:
-            body = "A short \(minutes)-minute \(modalityName.lowercased()) session in your target zone. The goal is just to get one in — comfort, not effort."
-        case .returnToTargetZone:
-            body = "A gentle \(minutes)-minute \(modalityName.lowercased()) session in your target zone. We're rebuilding the habit before we rebuild the fitness."
-        case .targetZoneBaseline:
-            body = "A \(minutes)-minute \(modalityName.lowercased()) session in your target zone. This becomes your weekly anchor."
-        case .aerobicSupport:
-            body = "A longer \(minutes)-minute aerobic \(modalityName.lowercased()) session in your target zone. Race fitness sits on top of this kind of work."
-        case .intervalIntro:
-            body = "A short \(modalityName.lowercased()) interval intro: 4 rounds of 30 seconds hard / 30 seconds easy after a 10-minute warmup. Calibrates what \"hard\" actually feels like."
-        case .benchmarkAssessment:
+        switch firstWorkout.sessionType {
+        case .benchmark_mile:
             body = "A mile benchmark — warmup, one all-out mile, cooldown. Gives us a clean baseline to build race-specific work from."
-        case .tempoStarter:
-            body = "A \(minutes)-minute \(modalityName.lowercased()) session with a short tempo block. We'll extend the tempo once we see how your legs respond."
+        case .interval_30_30, .interval_tempo, .interval_hillRepeats,
+             .interval_4x4, .interval_tabata, .interval_longIntervals:
+            if let proto = firstWorkout.intervalProtocol {
+                let work = Int(proto.workDuration)
+                let rest = Int(proto.restDuration)
+                body = "A short \(modalityLower) interval intro: \(proto.rounds) rounds of \(work) seconds hard / \(rest) seconds easy after a warmup. Calibrates what \"hard\" actually feels like."
+            } else {
+                body = "A short \(modalityLower) interval intro after a warmup. Calibrates what \"hard\" actually feels like."
+            }
+        case .zone2:
+            switch profile.primaryGoal {
+            case .raceTraining:
+                body = "A longer \(minutes)-minute aerobic \(modalityLower) session in your target zone. Race fitness sits on top of this kind of work."
+            case .returnToTraining:
+                body = "A gentle \(minutes)-minute \(modalityLower) session in your target zone. We're rebuilding the habit before we rebuild the fitness."
+            case .aerobicBase, .peakCardio, .generalFitness:
+                if profile.fitnessLevel == .beginner {
+                    body = "A short \(minutes)-minute \(modalityLower) session in your target zone. The goal is just to get one in — comfort, not effort."
+                } else {
+                    body = "A \(minutes)-minute \(modalityLower) session in your target zone. This becomes your weekly anchor."
+                }
+            }
         }
 
         var bullets: [String] = []

@@ -21,59 +21,73 @@ struct PlanOverviewView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.appBackground.ignoresSafeArea()
+        ScrollView {
+            VStack(spacing: 18) {
+                hero
+                weekSnapshotCard
 
-            ScrollView {
-                VStack(spacing: 18) {
-                    hero
-                    weekSnapshotCard
-
-                    ForEach(explanation.sections) { section in
-                        sectionCard(section)
-                    }
-
-                    Spacer(minLength: 8)
+                ForEach(explanation.sections) { section in
+                    sectionCard(section)
                 }
-                .padding(.horizontal, 22)
-                .padding(.top, 24)
-                .padding(.bottom, 130)
+
+                Spacer(minLength: 8)
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 24)
+            .padding(.bottom, 12)
+        }
+        .background(Color.appBackground.ignoresSafeArea())
+        // Pin the CTA to the bottom via safe-area inset rather than a ZStack
+        // overlay. The scroll view's content inset updates automatically, so
+        // nothing sits permanently occluded and the heavy page-spanning
+        // gradient is no longer needed.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            ctaBar
+        }
+        .preferredColorScheme(.dark)
+    }
 
-            VStack(spacing: 10) {
-                Spacer()
-                Button(action: onStartCoaching) {
-                    Text("Start Coaching")
-                        .font(.headline)
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.zone2Green)
-                        .cornerRadius(14)
-                }
-                .buttonStyle(.plain)
+    // MARK: - CTA Bar
 
-                Button(action: onEdit) {
-                    Text("Edit Plan")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.zone2Green)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
+    /// Pinned bottom bar containing primary + secondary actions. The short
+    /// gradient at the top gives a soft hand-off from the scroll content
+    /// without darkening half the screen the way the old overlay did.
+    private var ctaBar: some View {
+        VStack(spacing: 10) {
+            Button(action: onStartCoaching) {
+                Text("Start Coaching")
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.zone2Green)
+                    .cornerRadius(14)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 28)
-            .background(
+            .buttonStyle(.plain)
+
+            Button(action: onEdit) {
+                Text("Edit Plan")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.zone2Green)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .background {
+            VStack(spacing: 0) {
                 LinearGradient(
                     colors: [Color.appBackground.opacity(0), Color.appBackground],
                     startPoint: .top,
-                    endPoint: .center
+                    endPoint: .bottom
                 )
-                .allowsHitTesting(false)
-                .ignoresSafeArea(edges: .bottom)
-            )
+                .frame(height: 18)
+                Color.appBackground
+            }
+            .allowsHitTesting(false)
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Hero
@@ -109,7 +123,7 @@ struct PlanOverviewView: View {
             HStack(spacing: 0) {
                 metricColumn(
                     value: "\(profile.effectiveSessionsPerWeek)",
-                    caption: "sessions",
+                    caption: "starting sessions",
                     color: .white
                 )
                 Divider().overlay(Color.cardBorder).frame(height: 40)
@@ -124,6 +138,12 @@ struct PlanOverviewView: View {
                     caption: "intervals",
                     color: .orange
                 )
+            }
+
+            if profile.hasHeadroomToBuild {
+                Text("Building toward \(profile.availableSessionsCeiling) days/week")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.zone2Green)
             }
 
             Text("Target heart rate: \(profile.zone2TargetLow)–\(profile.zone2TargetHigh) bpm")

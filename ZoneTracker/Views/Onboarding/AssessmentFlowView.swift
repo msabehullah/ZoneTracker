@@ -22,6 +22,13 @@ struct AssessmentFlowView: View {
     @State private var didPreFill = false
     @State private var showingGoalResetConfirm = false
 
+    // Shared focus state for every keyboard-bound input in the flow. Kept on
+    // the parent so step transitions, Back/Continue, and flow completion all
+    // dismiss the keyboard reliably — SwiftUI would otherwise strand focus
+    // inside a now-invisible TabView page.
+    enum Field: Hashable { case targetEvent, age, weight }
+    @FocusState var focusedField: Field?
+
     private var steps: [AssessmentStep] { mode.steps }
     private var isLastStep: Bool { stepIndex == steps.count - 1 }
 
@@ -54,11 +61,26 @@ struct AssessmentFlowView: View {
                         ScrollView {
                             stepView(for: step)
                                 .padding(.bottom, 12)
+                                // Tap outside an active text field to dismiss.
+                                .contentShape(Rectangle())
+                                .onTapGesture { focusedField = nil }
                         }
+                        .scrollDismissesKeyboard(.interactively)
                         .tag(index)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                // Any step change drops focus — covers swipe gestures, the
+                // Back chevron, and programmatic advance.
+                .onChange(of: stepIndex) { _, _ in focusedField = nil }
+                .toolbar {
+                    // NumberPad has no return key, so give every numeric
+                    // field an explicit Done affordance.
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { focusedField = nil }
+                    }
+                }
 
                 Spacer(minLength: 0)
 
@@ -138,13 +160,13 @@ struct AssessmentFlowView: View {
         case .welcome:
             AssessmentWelcomeStep()
         case .goal:
-            AssessmentGoalStep(draft: $draft)
+            AssessmentGoalStep(draft: $draft, focus: $focusedField)
         case .fitness:
             AssessmentFitnessStep(draft: $draft)
         case .preferences:
             AssessmentPreferencesStep(draft: $draft)
         case .profile:
-            AssessmentProfileStep(draft: $draft)
+            AssessmentProfileStep(draft: $draft, focus: $focusedField)
         case .connect:
             AssessmentConnectStep(draft: draft)
         case .review:
@@ -179,10 +201,12 @@ struct AssessmentFlowView: View {
 
     private func goBack() {
         guard stepIndex > 0 else { return }
+        focusedField = nil
         withAnimation(.easeInOut(duration: 0.25)) { stepIndex -= 1 }
     }
 
     private func advance() {
+        focusedField = nil
         if !isLastStep {
             withAnimation(.easeInOut(duration: 0.25)) { stepIndex += 1 }
             return
@@ -298,6 +322,7 @@ private struct AssessmentWelcomeStep: View {
 
 private struct AssessmentGoalStep: View {
     @Binding var draft: AssessmentDraft
+    var focus: FocusState<AssessmentFlowView.Field?>.Binding
 
     var body: some View {
         VStack(spacing: 20) {
@@ -369,6 +394,9 @@ private struct AssessmentGoalStep: View {
                 TextField("e.g. 10K, Half Marathon", text: $draft.targetEvent)
                     .font(.subheadline)
                     .foregroundColor(.white)
+                    .focused(focus, equals: .targetEvent)
+                    .submitLabel(.done)
+                    .onSubmit { focus.wrappedValue = nil }
             }
             .padding()
             .background(Color.cardBackground)
@@ -679,6 +707,7 @@ private struct AssessmentPreferencesStep: View {
 
 private struct AssessmentProfileStep: View {
     @Binding var draft: AssessmentDraft
+    var focus: FocusState<AssessmentFlowView.Field?>.Binding
 
     @State private var ageText: String = ""
     @State private var weightText: String = ""
@@ -698,6 +727,7 @@ private struct AssessmentProfileStep: View {
                     label: "Age",
                     text: $ageText,
                     suffix: "years",
+                    field: .age,
                     commit: {
                         draft.age = max(10, min(100, Int(ageText) ?? draft.age))
                     }
@@ -707,6 +737,7 @@ private struct AssessmentProfileStep: View {
                     label: "Weight",
                     text: $weightText,
                     suffix: "lbs",
+                    field: .weight,
                     commit: {
                         draft.weight = max(50, min(500, Double(weightText) ?? draft.weight))
                     }
@@ -737,6 +768,7 @@ private struct AssessmentProfileStep: View {
         label: String,
         text: Binding<String>,
         suffix: String,
+        field: AssessmentFlowView.Field,
         commit: @escaping () -> Void
     ) -> some View {
         HStack {
@@ -747,6 +779,7 @@ private struct AssessmentProfileStep: View {
                 .keyboardType(.numberPad)
                 .font(.system(.title3, design: .monospaced))
                 .foregroundColor(.white)
+                .focused(focus, equals: field)
                 .onSubmit(commit)
             Text(suffix)
                 .foregroundColor(.gray)

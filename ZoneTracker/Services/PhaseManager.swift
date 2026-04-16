@@ -176,9 +176,18 @@ struct PhaseManager {
             $0.date >= lastWeekStart && $0.date < lastWeekEnd
         }
 
+        // Gate scales with the user's planned volume. A 3-day plan that drops
+        // to 1 session is a real slip (miss 2 of 3) and deserves the "repeat
+        // last week" nudge. A 7-day plan that logs 5 sessions is still a
+        // strong week and shouldn't trigger fallback. Rule: trigger only if
+        // the user missed at least half of their planned target, with a
+        // minimum absolute floor of 2 so tiny plans can't no-op the gate.
         let target = profile.effectiveSessionsPerWeek
         let completed = lastWeekWorkouts.count
-        return (target - completed) >= 2
+        let missed = target - completed
+        guard missed >= 2 else { return false }
+        let softThreshold = Int(ceil(Double(target) / 2.0))
+        return missed >= max(2, softThreshold)
     }
 
     // MARK: - Helpers

@@ -147,22 +147,95 @@ final class UserProfile {
     var zone3Ceiling: Int { Int(Double(maxHR) * 0.80) }
     var zone4Ceiling: Int { Int(Double(maxHR) * 0.90) }
 
-    /// Effective sessions per week, capped by available training days.
+    // MARK: - Weekly Target Math
+    //
+    // The assessment collects two related-but-distinct weekly numbers:
+    //
+    //   * `weeklyCardioFrequency` — how many cardio sessions the user is
+    //     *currently* doing. This is the realistic starting point.
+    //   * `availableTrainingDays` — how many days per week they *could* train.
+    //     This is the ceiling the plan ramps toward over time.
+    //
+    // The plan's current weekly target sits on a ramp from baseline → ceiling.
+    // How much head-room a user gets above their current baseline depends on
+    // their fitness level (experienced users tolerate bigger jumps) and goal
+    // (return-to-training never asks for more than what they're already doing,
+    // because rebuilding consistency at the current level matters more than
+    // adding volume). `focus` no longer touches the total — it only shapes
+    // composition (target-zone vs interval share).
+
+    /// Current realistic baseline the user told us they're doing. Beginners
+    /// hard-code to 2 regardless of `weeklyCardioFrequency` because the
+    /// assessment treats them specially (beginner step stores 0 frequency).
+    var baselineSessionsPerWeek: Int {
+        if fitnessLevel == .beginner { return 2 }
+        return max(0, min(7, weeklyCardioFrequency))
+    }
+
+    /// How many sessions we're willing to add above baseline on week one.
+    /// Experienced users can tolerate bigger ramps; returning users get none —
+    /// we want them to restore consistency before piling on volume.
+    private var rampAllowance: Int {
+        if primaryGoal == .returnToTraining { return 0 }
+        switch fitnessLevel {
+        case .beginner: return 0
+        case .occasional: return 1
+        case .regular: return 2
+        case .experienced: return 3
+        }
+    }
+
+    /// The absolute ceiling the user said they *could* train — the plan will
+    /// never exceed this even as they ramp up. Clamped to [1, 7].
+    var availableSessionsCeiling: Int {
+        max(1, min(7, availableTrainingDays))
+    }
+
+    /// The plan's actual current weekly target: baseline + ramp, capped by
+    /// what the user said they have room for, never below one.
+    var currentPlannedSessionsPerWeek: Int {
+        let target = baselineSessionsPerWeek + rampAllowance
+        return max(1, min(availableSessionsCeiling, target))
+    }
+
+    /// Authoritative weekly session target used everywhere downstream
+    /// (Dashboard, Progress, PlanOverview, ProgramExplanation). Reads the
+    /// current planned target so users aren't shown their ceiling as if it
+    /// were a commitment.
     var effectiveSessionsPerWeek: Int {
-        min(focus.targetSessionsPerWeek, availableTrainingDays)
+        currentPlannedSessionsPerWeek
     }
 
-    /// Effective target zone sessions, scaled proportionally to available days.
-    var effectiveTargetZoneSessions: Int {
-        let ratio = Double(effectiveSessionsPerWeek) / Double(max(1, focus.targetSessionsPerWeek))
-        return max(1, Int((Double(focus.targetZoneSessionsPerWeek) * ratio).rounded()))
+    /// True when the plan hasn't maxed out the user's stated capacity yet —
+    /// UI uses this to show the "building toward N days/week" line so the
+    /// ceiling they selected doesn't feel ignored.
+    var hasHeadroomToBuild: Bool {
+        availableSessionsCeiling > currentPlannedSessionsPerWeek
     }
 
-    /// Effective interval sessions, scaled proportionally and respecting intensity constraints.
+    /// Number of interval days per week. Composition is focus-driven (base
+    /// focus stays all target-zone; intervals ramp up through developing-speed
+    /// and peak). Caps keep the interval share sane even at 7 training days so
+    /// we don't flip the week majority-hard. Respects `.avoidHighIntensity`.
     var effectiveIntervalSessions: Int {
         if intensityConstraint == .avoidHighIntensity { return 0 }
-        let ratio = Double(effectiveSessionsPerWeek) / Double(max(1, focus.targetSessionsPerWeek))
-        return max(0, Int((Double(focus.intervalSessionsPerWeek) * ratio).rounded()))
+        let total = effectiveSessionsPerWeek
+        switch focus {
+        case .buildingBase, .activeRecovery:
+            return 0
+        case .developingSpeed:
+            // Roughly one interval per three sessions, capped at 2.
+            return min(2, total / 3)
+        case .peakPerformance:
+            // Roughly one interval per two sessions, capped at 3.
+            return min(3, total / 2)
+        }
+    }
+
+    /// Remaining sessions after intervals are allocated become target-zone
+    /// days. Always computed as a complement so the two always sum to total.
+    var effectiveTargetZoneSessions: Int {
+        max(0, effectiveSessionsPerWeek - effectiveIntervalSessions)
     }
 
     /// Duration for first workout, influenced by fitness level and typical workout minutes.

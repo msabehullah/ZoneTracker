@@ -14,6 +14,10 @@ struct OnboardingView: View {
 
     @State private var draft: AssessmentDraft
     @State private var phase: Phase
+    /// Set when a `context.save()` during onboarding fails. Surfaces as an
+    /// alert so the user knows to retry and the view stays on the current
+    /// step instead of silently advancing past a dropped save.
+    @State private var saveError: String?
 
     private enum Phase {
         case assessment
@@ -33,14 +37,33 @@ struct OnboardingView: View {
     }
 
     var body: some View {
+        content
+            .alert(
+                "Couldn't save",
+                isPresented: saveErrorBinding,
+                actions: {
+                    Button("OK", role: .cancel) { saveError = nil }
+                },
+                message: {
+                    if let saveError { Text(saveError) }
+                }
+            )
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch phase {
         case .assessment:
             AssessmentFlowView(
                 draft: $draft,
                 mode: .initialOnboarding
             ) { resetFocus in
-                commitInitial(resetFocus: resetFocus)
-                withAnimation(.easeInOut(duration: 0.3)) { phase = .planOverview }
+                // Only advance when the assessment commit actually persisted.
+                // Otherwise we'd present the plan overview on top of a profile
+                // that still looks un-submitted on cold relaunch.
+                if commitInitial(resetFocus: resetFocus) {
+                    withAnimation(.easeInOut(duration: 0.3)) { phase = .planOverview }
+                }
             }
 
         case .planOverview:
@@ -54,38 +77,59 @@ struct OnboardingView: View {
         }
     }
 
-    private func commitInitial(resetFocus: Bool) {
-        // For initial onboarding we always reset focus to the goal's initial focus.
-        draft.apply(to: profile, resetFocus: true)
-        // Intermediate state: answers are saved, but the user hasn't tapped
-        // "Start Coaching" yet. If the app is killed on the plan overview,
-        // the next launch returns here instead of either restarting the
-        // assessment or jumping past the handoff.
-        profile.hasSubmittedAssessment = true
-        profile.accountIdentifier = AccountStore.shared.appleUserID
+    private var saveErrorBinding: Binding<Bool> {
+        Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )
+    }
 
-        // Explicitly persist — autosave was racing with app termination
-        // and dropping the assessment commit on cold relaunch.
+    /// Commit assessment answers to the profile and persist the intermediate
+    /// `hasSubmittedAssessment` flag. Returns `true` only on successful save;
+    /// callers should gate their "advance to next phase" transition on this.
+    ///
+    /// On failure we roll the in-memory flag back so the state machine remains
+    /// honest — the user didn't actually submit if we couldn't persist — and
+    /// surface an alert so they know to retry.
+    private func commitInitial(resetFocus: Bool) -> Bool {
+        // Delegate the flag-flip + rollback logic to OnboardingCommitter so it
+        // is unit-testable without a throwing ModelContext.
         do {
-            try context.save()
+            try OnboardingCommitter.commitAssessment(
+                draft: draft,
+                profile: profile,
+                accountIdentifier: AccountStore.shared.appleUserID,
+                save: { try context.save() }
+            )
         } catch {
+            saveError = "We couldn't save your answers. Please try again."
             print("Onboarding commit failed to save: \(error)")
+            return false
         }
 
+        saveError = nil
         Task {
             try? await HealthKitManager.shared.requestAuthorization()
         }
+        return true
     }
 
+    /// Final completion — Start Coaching. Only calls `onComplete()` when the
+    /// completion flag actually persisted, otherwise the app would route the
+    /// user into `ContentView` even though a cold relaunch would drop them
+    /// back into onboarding.
     private func finishOnboarding() {
-        // Start Coaching is the actual completion moment — mark onboarding
-        // complete here and persist before handing control to the parent.
-        profile.hasCompletedOnboarding = true
         do {
-            try context.save()
+            try OnboardingCommitter.finalizeOnboarding(
+                profile: profile,
+                save: { try context.save() }
+            )
         } catch {
+            saveError = "We couldn't finish setting up your plan. Please try again."
             print("Onboarding finalize failed to save: \(error)")
+            return
         }
+        saveError = nil
         onComplete()
     }
 }

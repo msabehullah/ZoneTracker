@@ -123,7 +123,14 @@ final class AppSyncCoordinator {
     ) {
         if let remoteProfile {
             if let localProfile {
-                if !localProfile.hasCompletedOnboarding && remoteProfile.hasCompletedOnboarding {
+                // Onboarding is a three-step state machine:
+                //   fresh(0) → submitted(1) → completed(2)
+                // Apply the remote snapshot when it's strictly more progressed
+                // than the local profile. That way cross-device restore can
+                // reopen on plan-overview (submitted) or straight into the app
+                // (completed) without ever *regressing* a user who's already
+                // further along on this device.
+                if remoteOnboardingProgress(remoteProfile) > localOnboardingProgress(localProfile) {
                     apply(remoteProfile: remoteProfile, to: localProfile)
                 } else {
                     localProfile.accountIdentifier = accountIdentifier
@@ -139,6 +146,24 @@ final class AppSyncCoordinator {
         }
     }
 
+    /// Ordinal rank in the onboarding state machine, shared by apply and
+    /// makeProfile so remote merges keep the invariant
+    /// `completed ⇒ submitted` and `submitted ⇒ not fresh`.
+    private func localOnboardingProgress(_ profile: UserProfile) -> Int {
+        if profile.hasCompletedOnboarding { return 2 }
+        if profile.hasSubmittedAssessment { return 1 }
+        return 0
+    }
+
+    private func remoteOnboardingProgress(_ snapshot: CloudProfileSnapshot) -> Int {
+        if snapshot.hasCompletedOnboarding { return 2 }
+        // Older cloud records predate `hasSubmittedAssessment` (nil). Legacy
+        // semantics were "only completed was tracked", so nil means we have no
+        // evidence of submission — treat as fresh for comparison purposes.
+        if snapshot.hasSubmittedAssessment == true { return 1 }
+        return 0
+    }
+
     private func apply(remoteProfile: CloudProfileSnapshot, to profile: UserProfile) {
         profile.profileIdentifier = remoteProfile.profileIdentifier
         profile.accountIdentifier = remoteProfile.accountIdentifier
@@ -148,6 +173,18 @@ final class AppSyncCoordinator {
         profile.height = remoteProfile.height
         profile.phaseStartDate = remoteProfile.phaseStartDate
         profile.hasCompletedOnboarding = remoteProfile.hasCompletedOnboarding
+        // If the remote predates the flag, keep whatever local already thought.
+        // If it carries a value, prefer remote. This preserves the "don't
+        // regress" behavior because apply only runs when remote progress is
+        // strictly greater than local — so a remote `false` here can only
+        // overwrite a local `false`.
+        if let remoteSubmitted = remoteProfile.hasSubmittedAssessment {
+            profile.hasSubmittedAssessment = remoteSubmitted
+        }
+        // Invariant: completion implies submission. Keep it tight after apply.
+        if profile.hasCompletedOnboarding {
+            profile.hasSubmittedAssessment = true
+        }
         profile.zone2TargetLow = remoteProfile.zone2Low
         profile.zone2TargetHigh = remoteProfile.zone2High
         profile.legDays = remoteProfile.legDays
@@ -184,6 +221,16 @@ final class AppSyncCoordinator {
         profile.maxHR = snapshot.maxHeartRate
         profile.phaseStartDate = snapshot.phaseStartDate
         profile.hasCompletedOnboarding = snapshot.hasCompletedOnboarding
+        // Old snapshots can arrive without this field — treat nil as false
+        // (fresh) so a restored device starts at the assessment rather than
+        // skipping it. If the record *does* carry the flag, respect it so
+        // restore can drop the user straight back onto plan overview.
+        profile.hasSubmittedAssessment = snapshot.hasSubmittedAssessment ?? false
+        // Invariant: completion implies submission. Old records only stored
+        // completion; backfill the derived flag so UI routing stays coherent.
+        if profile.hasCompletedOnboarding {
+            profile.hasSubmittedAssessment = true
+        }
         profile.legDays = snapshot.legDays
         profile.primaryGoalRaw = snapshot.primaryGoalRaw
         profile.targetEvent = snapshot.targetEvent
@@ -198,6 +245,25 @@ final class AppSyncCoordinator {
         profile.currentPhase = snapshot.currentPhase
         return profile
     }
+
+    #if DEBUG
+    /// Test-only passthrough — exposes the onboarding-progress comparator so
+    /// tests can drive it without reaching into private state.
+    func debug_applyRemote(_ snapshot: CloudProfileSnapshot, to profile: UserProfile) {
+        apply(remoteProfile: snapshot, to: profile)
+    }
+
+    func debug_makeProfile(from snapshot: CloudProfileSnapshot) -> UserProfile {
+        makeProfile(from: snapshot)
+    }
+
+    func debug_shouldApplyRemote(
+        _ snapshot: CloudProfileSnapshot,
+        overLocal profile: UserProfile
+    ) -> Bool {
+        remoteOnboardingProgress(snapshot) > localOnboardingProgress(profile)
+    }
+    #endif
 
     private func makeWorkout(from snapshot: CloudWorkoutSnapshot) -> WorkoutEntry {
         let focus = TrainingFocus(rawValue: snapshot.focusRaw)

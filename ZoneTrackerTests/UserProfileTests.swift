@@ -199,18 +199,38 @@ final class UserProfileTests: XCTestCase {
 
     // MARK: - Effective Session Counts
 
-    func testEffectiveSessionsCappedByAvailableDays() {
+    func testEffectiveSessionsRampsFromBaselineTowardCeiling() {
+        // Post-pass-4: weeklyCardioFrequency is the current baseline,
+        // availableTrainingDays is the ceiling the plan grows toward.
         let profile = UserProfile()
-        profile.focus = .peakPerformance // targetSessionsPerWeek = 4
-        profile.availableTrainingDays = 2
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 2, "Should be capped by available days")
+        profile.fitnessLevel = .experienced
+        profile.focus = .peakPerformance
+        profile.weeklyCardioFrequency = 2
+        profile.availableTrainingDays = 7
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
+                       "Experienced user ramps 3 past baseline, capped at ceiling")
+        XCTAssertEqual(profile.availableSessionsCeiling, 7)
+        XCTAssertTrue(profile.hasHeadroomToBuild,
+                      "5 of 7 leaves headroom for UI to surface 'building toward' copy")
+
+        profile.weeklyCardioFrequency = 7
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 7,
+                       "Baseline already at ceiling — stay there")
+        XCTAssertFalse(profile.hasHeadroomToBuild)
     }
 
     func testEffectiveIntervalSessionsBlockedByAvoidHighIntensity() {
         let profile = UserProfile()
-        profile.focus = .developingSpeed // intervalSessionsPerWeek = 1
+        profile.fitnessLevel = .experienced
+        profile.focus = .developingSpeed
+        profile.weeklyCardioFrequency = 2
+        profile.availableTrainingDays = 4
         profile.intensityConstraint = .avoidHighIntensity
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 4,
+                       "Ramp still lands at ceiling for experienced users")
         XCTAssertEqual(profile.effectiveIntervalSessions, 0, "Avoid high intensity should block intervals")
+        XCTAssertEqual(profile.effectiveTargetZoneSessions, 4,
+                       "All sessions become target zone when intervals are blocked")
     }
 
     func testEffectiveStartingDurationForBeginner() {

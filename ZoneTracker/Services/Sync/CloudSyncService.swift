@@ -11,6 +11,12 @@ struct CloudProfileSnapshot: Equatable, Sendable {
     var currentPhase: String
     var phaseStartDate: Date
     var hasCompletedOnboarding: Bool
+    /// Intermediate onboarding state — true once the assessment is committed
+    /// but before "Start Coaching" is tapped. Optional for backward
+    /// compatibility with older cloud records that predate the field; absent
+    /// records decode as `nil`, which is treated as "unknown → false" by the
+    /// coordinator when rebuilding a local profile.
+    var hasSubmittedAssessment: Bool?
     var zone2Low: Int
     var zone2High: Int
     var legDays: [Int]
@@ -39,6 +45,7 @@ struct CloudProfileSnapshot: Equatable, Sendable {
             currentPhase: profile.currentPhase,
             phaseStartDate: profile.phaseStartDate,
             hasCompletedOnboarding: profile.hasCompletedOnboarding,
+            hasSubmittedAssessment: profile.hasSubmittedAssessment,
             zone2Low: profile.zone2TargetLow,
             zone2High: profile.zone2TargetHigh,
             legDays: profile.legDays,
@@ -184,6 +191,7 @@ actor CloudSyncService {
         record["currentPhase"] = snapshot.currentPhase as CKRecordValue
         record["phaseStartDate"] = snapshot.phaseStartDate as CKRecordValue
         record["hasCompletedOnboarding"] = snapshot.hasCompletedOnboarding as CKRecordValue
+        record["hasSubmittedAssessment"] = snapshot.hasSubmittedAssessment as CKRecordValue?
         record["zone2Low"] = snapshot.zone2Low as CKRecordValue
         record["zone2High"] = snapshot.zone2High as CKRecordValue
         record["legDaysData"] = (try? JSONEncoder().encode(snapshot.legDays)) as CKRecordValue?
@@ -233,6 +241,10 @@ actor CloudSyncService {
             currentPhase: record["currentPhase"] as? String ?? TrainingPhase.phase1.rawValue,
             phaseStartDate: record["phaseStartDate"] as? Date ?? Date(),
             hasCompletedOnboarding: record["hasCompletedOnboarding"] as? Bool ?? false,
+            // Older records predate this field; leave it as nil rather than
+            // silently defaulting to false so the coordinator can distinguish
+            // "remote has no opinion" from "remote says not yet submitted".
+            hasSubmittedAssessment: record["hasSubmittedAssessment"] as? Bool,
             zone2Low: record["zone2Low"] as? Int ?? 130,
             zone2High: record["zone2High"] as? Int ?? 150,
             legDays: decodeLegDays(from: record["legDaysData"] as? Data),

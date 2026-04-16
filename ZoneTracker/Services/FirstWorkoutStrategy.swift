@@ -19,7 +19,8 @@ enum FirstWorkoutStrategy {
     /// Build the first workout recommendation for `profile`.
     static func recommend(for profile: UserProfile) -> WorkoutRecommendation {
         let modality = selectModality(for: profile)
-        let shape = decideShape(for: profile)
+        let rawShape = decideShape(for: profile)
+        let shape = resolveShape(rawShape, modality: modality)
         return build(profile: profile, modality: modality, shape: shape)
     }
 
@@ -93,6 +94,44 @@ enum FirstWorkoutStrategy {
         case .returnToTraining:
             return .returnToTargetZone   // unreachable, guarded above
         }
+    }
+
+    // MARK: - Shape × Modality Resolution
+
+    /// Modalities for which "run one all-out mile" is an honest prescription.
+    /// Everything else (bike, row, swim, ruck, stair, elliptical) would need a
+    /// different test protocol, and we don't have one modeled yet — so we
+    /// don't pretend.
+    static let runningModalities: Set<ExerciseType> = [.treadmill, .outdoorRun]
+
+    static func isRunningModality(_ modality: ExerciseType) -> Bool {
+        runningModalities.contains(modality)
+    }
+
+    /// Narrow a decided shape to one that's compatible with the selected
+    /// modality. Today the only mismatch we correct is the benchmark mile,
+    /// which historically fell through on bike/row/swim users and told them to
+    /// run a mile. When the modality isn't running, we fall back to
+    /// `.aerobicSupport` — the same shape race-training users get when the
+    /// event isn't imminent. It's goal-aware (still targets race fitness) and
+    /// modality-honest (target-zone session in the user's actual sport).
+    static func resolveShape(_ shape: Shape, modality: ExerciseType) -> Shape {
+        switch shape {
+        case .benchmarkAssessment where !isRunningModality(modality):
+            return .aerobicSupport
+        default:
+            return shape
+        }
+    }
+
+    /// The fully-resolved shape for a profile — the same shape `recommend(for:)`
+    /// will hand back, with modality narrowing already applied. Use this
+    /// anywhere UI copy needs to describe the first workout (e.g.
+    /// ``ProgramExplanation``) so the narrative never disagrees with the
+    /// session the user is actually about to see queued up.
+    static func resolvedShape(for profile: UserProfile) -> Shape {
+        let modality = selectModality(for: profile)
+        return resolveShape(decideShape(for: profile), modality: modality)
     }
 
     // MARK: - Modality Selection

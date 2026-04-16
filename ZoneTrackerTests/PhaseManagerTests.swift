@@ -107,6 +107,75 @@ final class PhaseManagerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(count, 1, "Should count at least today's workout")
     }
 
+    // MARK: Missed-session gate scales with plan volume
+    //
+    // The gate used to be a hardcoded "missed ≥ 2" absolute threshold. That
+    // made a 5-of-7 week look like a failure. Post-pass-4 the rule is
+    // relative: trigger only when the user missed at least half their
+    // planned target, with a floor of 2 so tiny plans can't no-op.
+
+    func testSevenDayPlanNotPenalizedAtFiveOfSeven() {
+        // experienced + freq 4 + avail 7 → target 7, ceiling 7.
+        // completed 5 → missed 2 → threshold max(2, ceil(7/2)=4)=4 → no trigger.
+        let profile = UserProfile()
+        profile.fitnessLevel = .experienced
+        profile.weeklyCardioFrequency = 4
+        profile.availableTrainingDays = 7
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 7)
+
+        let workouts = lastWeekWorkouts(count: 5)
+        XCTAssertFalse(
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            "A 5-of-7 week is still a great week — must not be flagged as missed"
+        )
+    }
+
+    func testSevenDayPlanTriggersOnClearDropOff() {
+        let profile = UserProfile()
+        profile.fitnessLevel = .experienced
+        profile.weeklyCardioFrequency = 4
+        profile.availableTrainingDays = 7
+
+        let workouts = lastWeekWorkouts(count: 3)
+        XCTAssertTrue(
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            "3-of-7 is a real drop-off — should trigger the 'repeat' fallback"
+        )
+    }
+
+    func testLowFrequencyPlanStillGatedOnTwoMisses() {
+        // occasional + freq 2 + avail 3 → target 3. completed 1 → missed 2
+        // → threshold max(2, ceil(3/2)=2)=2 → triggers. Preserves prior behavior.
+        let profile = UserProfile()
+        profile.fitnessLevel = .occasional
+        profile.weeklyCardioFrequency = 2
+        profile.availableTrainingDays = 3
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 3)
+
+        let workouts = lastWeekWorkouts(count: 1)
+        XCTAssertTrue(
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            "1-of-3 is a real slip on a small plan — must still trigger"
+        )
+    }
+
+    func testFiveDayPlanNotPenalizedAtThreeOfFive() {
+        // regular + freq 3 + avail 5 → target 5. completed 3 → missed 2 →
+        // threshold max(2, ceil(5/2)=3)=3 → no trigger. A 3-of-5 week is
+        // a normal off-week, not a consistency failure.
+        let profile = UserProfile()
+        profile.fitnessLevel = .regular
+        profile.weeklyCardioFrequency = 3
+        profile.availableTrainingDays = 5
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5)
+
+        let workouts = lastWeekWorkouts(count: 3)
+        XCTAssertFalse(
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            "3-of-5 shouldn't trigger fallback — 40% miss rate on a mid-volume plan"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeProfile(focus: TrainingFocus, weeksAgo: Int) -> UserProfile {
@@ -158,6 +227,24 @@ final class PhaseManagerTests: XCTestCase {
                 makeWorkout(daysAgo: week * 7, duration: 50 * 60, sessionType: .zone2,
                            phase: .phase1, avgHR: 140, drift: 3.0)
             )
+        }
+        return workouts
+    }
+
+    /// Build `count` workouts dated inside the previous calendar week —
+    /// used by `missedSessionsLastWeek` gating tests.
+    private func lastWeekWorkouts(count: Int) -> [WorkoutEntry] {
+        let calendar = Calendar.current
+        let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: Date().startOfWeek)!
+        var workouts: [WorkoutEntry] = []
+        for i in 0..<count {
+            // Spread the sessions across last week so they all land in the
+            // same weekly window regardless of which weekday "today" is.
+            let dayOffset = min(6, i)
+            let date = lastWeekStart.addingTimeInterval(
+                Double(dayOffset) * 86400 + 43200
+            )
+            workouts.append(makeWorkout(date: date))
         }
         return workouts
     }
