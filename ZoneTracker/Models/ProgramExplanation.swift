@@ -143,7 +143,8 @@ struct ProgramExplanation: Equatable {
 
         let rampLine: String
         if profile.hasHeadroomToBuild {
-            rampLine = "You said you have room for up to \(ceiling) days a week — we'll grow into that as the weeks add up, not on day one."
+            let stepWeeks = profile.weeksPerRampStep
+            rampLine = "You said you have room for up to \(ceiling) days a week — we'll add a session roughly every \(stepWeeks) week\(stepWeeks == 1 ? "" : "s") as you stay consistent."
         } else {
             rampLine = ""
         }

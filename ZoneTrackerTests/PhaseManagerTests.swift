@@ -115,14 +115,18 @@ final class PhaseManagerTests: XCTestCase {
     // planned target, with a floor of 2 so tiny plans can't no-op.
 
     func testSevenDayPlanNotPenalizedAtFiveOfSeven() {
-        // experienced + freq 4 + avail 7 → target 7, ceiling 7.
-        // completed 5 → missed 2 → threshold max(2, ceil(7/2)=4)=4 → no trigger.
+        // experienced + freq 4 + avail 7, far enough in that ramp has
+        // reached ceiling. step=2, need earned≥3 → weekNumber≥7 → weeksAgo=6.
         let profile = UserProfile()
         profile.fitnessLevel = .experienced
         profile.weeklyCardioFrequency = 4
         profile.availableTrainingDays = 7
+        profile.phaseStartDate = Calendar.current.date(
+            byAdding: .weekOfYear, value: -6, to: Date()
+        )!
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 7)
 
+        // completed 5 → missed 2 → threshold max(2, ceil(7/2)=4)=4 → no trigger.
         let workouts = lastWeekWorkouts(count: 5)
         XCTAssertFalse(
             PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
@@ -135,6 +139,10 @@ final class PhaseManagerTests: XCTestCase {
         profile.fitnessLevel = .experienced
         profile.weeklyCardioFrequency = 4
         profile.availableTrainingDays = 7
+        profile.phaseStartDate = Calendar.current.date(
+            byAdding: .weekOfYear, value: -6, to: Date()
+        )!
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 7)
 
         let workouts = lastWeekWorkouts(count: 3)
         XCTAssertTrue(
@@ -144,14 +152,18 @@ final class PhaseManagerTests: XCTestCase {
     }
 
     func testLowFrequencyPlanStillGatedOnTwoMisses() {
-        // occasional + freq 2 + avail 3 → target 3. completed 1 → missed 2
-        // → threshold max(2, ceil(3/2)=2)=2 → triggers. Preserves prior behavior.
+        // occasional + freq 2 + avail 3. step=3, baseline=2.
+        // Need earned≥1 → weekNumber≥4 → weeksAgo=3.
         let profile = UserProfile()
         profile.fitnessLevel = .occasional
         profile.weeklyCardioFrequency = 2
         profile.availableTrainingDays = 3
+        profile.phaseStartDate = Calendar.current.date(
+            byAdding: .weekOfYear, value: -3, to: Date()
+        )!
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 3)
 
+        // completed 1 → missed 2 → threshold max(2, ceil(3/2)=2)=2 → triggers.
         let workouts = lastWeekWorkouts(count: 1)
         XCTAssertTrue(
             PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
@@ -160,15 +172,18 @@ final class PhaseManagerTests: XCTestCase {
     }
 
     func testFiveDayPlanNotPenalizedAtThreeOfFive() {
-        // regular + freq 3 + avail 5 → target 5. completed 3 → missed 2 →
-        // threshold max(2, ceil(5/2)=3)=3 → no trigger. A 3-of-5 week is
-        // a normal off-week, not a consistency failure.
+        // regular + freq 3 + avail 5. step=2, baseline=3.
+        // Need earned≥2 → weekNumber≥5 → weeksAgo=4.
         let profile = UserProfile()
         profile.fitnessLevel = .regular
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 5
+        profile.phaseStartDate = Calendar.current.date(
+            byAdding: .weekOfYear, value: -4, to: Date()
+        )!
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 5)
 
+        // completed 3 → missed 2 → threshold max(2, ceil(5/2)=3)=3 → no trigger.
         let workouts = lastWeekWorkouts(count: 3)
         XCTAssertFalse(
             PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),

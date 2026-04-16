@@ -161,16 +161,15 @@ final class ProgramExplanationTests: XCTestCase {
     // MARK: Weekly structure reflects user-selected training days
 
     func testWeeklyStructureSurfacesBothStartingAndCeiling() {
-        // Regular user currently doing 3/week, wants up to 7 — the plan
-        // should start in the middle of that range and tell the user so.
+        // New user (week 1), regular, freq=3, avail=7 → baseline=3, ceiling=7.
+        // Week 1 has 0 earned bumps → target=3.
         let profile = makeProfile(goal: .generalFitness, level: .regular)
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 7
         let structure = section(buildExplanation(profile), id: "weeklyStructure")
 
-        // Regular gets +2 ramp → start 5, ceiling 7.
-        XCTAssertTrue(structure.bullets.contains("Starting at 5 sessions a week"),
-                      "Should expose starting volume, not just the ceiling: \(structure.bullets)")
+        XCTAssertTrue(structure.bullets.contains("Starting at 3 sessions a week"),
+                      "Week-1 target should be baseline: \(structure.bullets)")
         XCTAssertTrue(structure.bullets.contains("Building toward 7 days a week"),
                       "Headroom copy must reassure users we'll grow toward their ceiling: \(structure.bullets)")
     }
@@ -187,16 +186,27 @@ final class ProgramExplanationTests: XCTestCase {
     }
 
     func testWeeklyStructureRespectsAvoidHighIntensityWithHeadroom() {
+        // New user (week 1), experienced, freq=3, avail=7.
+        // Week 1: baseline=3, 0 bumps → target=3.
         let profile = makeProfile(goal: .peakCardio, level: .experienced)
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 7
         profile.intensityConstraint = .avoidHighIntensity
         let structure = section(buildExplanation(profile), id: "weeklyStructure")
 
-        // Experienced ramps +3 → start 6, ceiling 7.
-        XCTAssertTrue(structure.bullets.contains("Starting at 6 sessions a week"))
+        XCTAssertTrue(structure.bullets.contains("Starting at 3 sessions a week"))
         XCTAssertFalse(structure.bullets.contains(where: { $0.lowercased().contains("interval day") }),
                        "Constraint must suppress interval bullets even with ample days: \(structure.bullets)")
+    }
+
+    func testWeeklyStructureRampCopyMentionsCadence() {
+        let profile = makeProfile(goal: .generalFitness, level: .experienced)
+        profile.weeklyCardioFrequency = 3
+        profile.availableTrainingDays = 7
+        let structure = section(buildExplanation(profile), id: "weeklyStructure")
+
+        XCTAssertTrue(structure.body.contains("every 2 week"),
+                      "Ramp copy should mention the cadence: \(structure.body)")
     }
 
     // MARK: - First Workout Copy Derives From Passed Recommendation

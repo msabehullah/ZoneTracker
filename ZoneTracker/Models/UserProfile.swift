@@ -152,17 +152,26 @@ final class UserProfile {
     // The assessment collects two related-but-distinct weekly numbers:
     //
     //   * `weeklyCardioFrequency` — how many cardio sessions the user is
-    //     *currently* doing. This is the realistic starting point.
+    //     *currently* doing. This is the realistic starting point (baseline).
     //   * `availableTrainingDays` — how many days per week they *could* train.
     //     This is the ceiling the plan ramps toward over time.
     //
-    // The plan's current weekly target sits on a ramp from baseline → ceiling.
-    // How much head-room a user gets above their current baseline depends on
-    // their fitness level (experienced users tolerate bigger jumps) and goal
-    // (return-to-training never asks for more than what they're already doing,
-    // because rebuilding consistency at the current level matters more than
-    // adding volume). `focus` no longer touches the total — it only shapes
-    // composition (target-zone vs interval share).
+    // The plan starts at the user's baseline and earns +1 session every
+    // `weeksPerRampStep` weeks, up to the ceiling. The ramp speed depends
+    // on fitness level (experienced/regular ramp every 2 weeks; occasional
+    // every 3; beginner/return-to-training every 4). Week 1 always starts
+    // at baseline — no instant jump.
+    //
+    // `weekNumber` (weeks since `phaseStartDate`) drives the ramp. Since
+    // `phaseStartDate` resets on focus transitions, the ramp restarts
+    // naturally when the user enters a new training phase. Consistency
+    // gating happens at the recommendation layer: when
+    // `PhaseManager.missedSessionsLastWeek` fires, the engine falls back
+    // to "repeat last week," preventing the user from being pushed toward
+    // a ramped target they haven't been hitting.
+    //
+    // `focus` never touches the total — it only shapes composition
+    // (target-zone vs interval share).
 
     /// Current realistic baseline the user told us they're doing. Beginners
     /// hard-code to 2 regardless of `weeklyCardioFrequency` because the
@@ -172,17 +181,27 @@ final class UserProfile {
         return max(0, min(7, weeklyCardioFrequency))
     }
 
-    /// How many sessions we're willing to add above baseline on week one.
-    /// Experienced users can tolerate bigger ramps; returning users get none —
-    /// we want them to restore consistency before piling on volume.
-    private var rampAllowance: Int {
-        if primaryGoal == .returnToTraining { return 0 }
+    /// How many weeks of consistent training the user needs before earning
+    /// an additional +1 session. Experienced and regular users ramp faster;
+    /// beginners and return-to-training ramp slowly so volume doesn't
+    /// outpace their readiness.
+    var weeksPerRampStep: Int {
+        if primaryGoal == .returnToTraining { return 4 }
         switch fitnessLevel {
-        case .beginner: return 0
-        case .occasional: return 1
+        case .beginner: return 4
+        case .occasional: return 3
         case .regular: return 2
-        case .experienced: return 3
+        case .experienced: return 2
         }
+    }
+
+    /// How many +1 bumps the plan has earned based on time in the current
+    /// focus. Week 1 earns 0 bumps. Each `weeksPerRampStep` weeks after
+    /// that earns another +1, up to however many are needed to reach the
+    /// ceiling. Since `weekNumber` resets when focus transitions fire (via
+    /// `phaseStartDate`), the ramp restarts naturally after phase changes.
+    var earnedRampBumps: Int {
+        max(0, (weekNumber - 1) / weeksPerRampStep)
     }
 
     /// The absolute ceiling the user said they *could* train — the plan will
@@ -191,10 +210,18 @@ final class UserProfile {
         max(1, min(7, availableTrainingDays))
     }
 
-    /// The plan's actual current weekly target: baseline + ramp, capped by
-    /// what the user said they have room for, never below one.
+    /// The plan's actual current weekly target: baseline + time-earned
+    /// bumps, capped by the user's stated ceiling, never below one.
+    ///
+    /// The ramp is deterministic from `weekNumber` (weeks since
+    /// `phaseStartDate`). Consistency gating happens at the recommendation
+    /// layer: `PhaseManager.missedSessionsLastWeek` triggers a "repeat
+    /// last week" fallback that prevents the user from experiencing ramped
+    /// volume when they haven't been showing up. The plan *target* still
+    /// grows — the engine just doesn't push them to hit it until they've
+    /// been consistent again.
     var currentPlannedSessionsPerWeek: Int {
-        let target = baselineSessionsPerWeek + rampAllowance
+        let target = baselineSessionsPerWeek + earnedRampBumps
         return max(1, min(availableSessionsCeiling, target))
     }
 

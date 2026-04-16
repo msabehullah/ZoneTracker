@@ -3,22 +3,23 @@ import XCTest
 
 // MARK: - Effective Session Math
 //
-// These tests guard the weekly-target contract. The post-pass-4 rule:
+// These tests guard the weekly-target contract. The post-pass-5 rule:
 //
 //   * `weeklyCardioFrequency` is the user's *current* baseline — how many
 //     cardio sessions they're already doing when they join.
 //   * `availableTrainingDays` is the *ceiling* — how many they could train.
-//   * The plan ramps from baseline toward ceiling; ramp size depends on
-//     fitness level (experienced gets a bigger jump; beginner/return-to-
-//     training gets none) and is always clamped to the ceiling.
+//   * The plan starts at baseline (week 1) and earns +1 session every
+//     `weeksPerRampStep` weeks. Experienced/regular ramp every 2 weeks;
+//     occasional every 3; beginner/return-to-training every 4.
 //   * `focus` shapes *composition* (interval share), never the total.
 //   * `.avoidHighIntensity` keeps intervals at 0, no matter the focus.
 //   * target-zone + interval sessions always sum to the planned total.
 //
-// Anything that reads effective session counts — Dashboard "This Week",
-// Progress "Target", PlanOverview snapshot, ProgramExplanation weekly
-// structure — flows through these properties, so this is the one place to
-// lock the math down.
+// Consistency gating: when `PhaseManager.missedSessionsLastWeek` fires,
+// the recommendation engine falls back to "repeat last week," preventing
+// the user from being pushed toward a ramped target they haven't been
+// hitting. The target itself is time-based (deterministic from
+// `weekNumber`), and the engine gates the user's actual experience.
 
 final class EffectiveSessionsTests: XCTestCase {
 
@@ -28,6 +29,7 @@ final class EffectiveSessionsTests: XCTestCase {
         goal: CardioGoal = .generalFitness,
         weeklyCardioFrequency: Int = 0,
         availableDays: Int,
+        weeksAgo: Int = 0,
         intensityConstraint: IntensityConstraint = .none
     ) -> UserProfile {
         let profile = UserProfile()
@@ -37,29 +39,29 @@ final class EffectiveSessionsTests: XCTestCase {
         profile.weeklyCardioFrequency = weeklyCardioFrequency
         profile.availableTrainingDays = availableDays
         profile.intensityConstraint = intensityConstraint
+        if weeksAgo > 0 {
+            profile.phaseStartDate = Calendar.current.date(
+                byAdding: .weekOfYear, value: -weeksAgo, to: Date()
+            ) ?? Date()
+        }
         return profile
     }
 
-    // MARK: Baseline-to-ceiling ramp
+    // MARK: Week-1 baseline
 
-    func testExperiencedUserGetsBiggerRampButStaysUnderCeiling() {
-        // Current 2, capacity 7, experienced fitness — we should add 3
-        // (not skip straight to 7). That's the whole point of the ramp.
-        let profile = makeProfile(
+    func testWeekOneStartsAtBaseline() {
+        // Week 1: no bumps earned yet, regardless of fitness level.
+        let experienced = makeProfile(
             fitnessLevel: .experienced,
-            weeklyCardioFrequency: 2,
+            weeklyCardioFrequency: 3,
             availableDays: 7
         )
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
-                       "Experienced user at 2→7 should start at baseline+3")
-        XCTAssertEqual(profile.availableSessionsCeiling, 7)
-        XCTAssertTrue(profile.hasHeadroomToBuild,
-                      "5 of 7 should leave headroom for UI to surface")
+        XCTAssertEqual(experienced.effectiveSessionsPerWeek, 3,
+                       "Week 1 should start at baseline — no instant jump")
+        XCTAssertTrue(experienced.hasHeadroomToBuild)
     }
 
-    func testBeginnerUsesConservativeBaselineAndNoRamp() {
-        // Beginners don't report a frequency (draft stores 0), so the
-        // baseline is a conservative 2 regardless of what comes in.
+    func testBeginnerBaselineHardCodedToTwo() {
         let profile = makeProfile(
             fitnessLevel: .beginner,
             weeklyCardioFrequency: 0,
@@ -68,39 +70,128 @@ final class EffectiveSessionsTests: XCTestCase {
         XCTAssertEqual(profile.baselineSessionsPerWeek, 2,
                        "Beginner baseline hard-coded to 2")
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 2,
-                       "Beginner ramp allowance is 0 — stay at baseline")
+                       "Week 1 beginner stays at baseline")
     }
 
-    func testReturnToTrainingCapsRampAtZero() {
-        // Returning users need to restore consistency, not add volume.
+    // MARK: Time-based ramp
+
+    func testTargetGrowsOverTimeTowardCeiling() {
+        // Experienced user, freq=2, avail=7. Step = 2 weeks.
+        // Week 1: 2, Week 3: 3, Week 5: 4, Week 7: 5, Week 9: 6, Week 11: 7
+        let w1 = makeProfile(fitnessLevel: .experienced, weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 0)
+        XCTAssertEqual(w1.effectiveSessionsPerWeek, 2, "Week 1 = baseline")
+
+        let w3 = makeProfile(fitnessLevel: .experienced, weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 2)
+        XCTAssertEqual(w3.effectiveSessionsPerWeek, 3, "Week 3 earns first bump")
+
+        let w7 = makeProfile(fitnessLevel: .experienced, weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 6)
+        XCTAssertEqual(w7.effectiveSessionsPerWeek, 5, "Week 7 earns 3 bumps")
+
+        let w11 = makeProfile(fitnessLevel: .experienced, weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 10)
+        XCTAssertEqual(w11.effectiveSessionsPerWeek, 7, "Week 11 reaches ceiling")
+    }
+
+    func testTargetDoesNotInstantlyJumpToCeiling() {
+        // Even with a large gap between baseline and ceiling, week 1 = baseline.
         let profile = makeProfile(
             fitnessLevel: .experienced,
-            goal: .returnToTraining,
             weeklyCardioFrequency: 2,
             availableDays: 7
         )
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 2,
-                       "Return-to-training never ramps above current")
+                       "Must not jump from 2 to 7 on day one")
+        XCTAssertNotEqual(profile.effectiveSessionsPerWeek,
+                          profile.availableSessionsCeiling)
     }
+
+    func testTargetNeverExceedsCeiling() {
+        // Far enough out that bumps would overshoot if uncapped.
+        let profile = makeProfile(
+            fitnessLevel: .experienced,
+            weeklyCardioFrequency: 2,
+            availableDays: 5,
+            weeksAgo: 52
+        )
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
+                       "Target must cap at ceiling even after many weeks")
+    }
+
+    func testReturnToTrainingRampsSlowly() {
+        // Return-to-training: step = 4 weeks. Baseline = 2, ceiling = 7.
+        let w1 = makeProfile(fitnessLevel: .experienced, goal: .returnToTraining,
+                             weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 0)
+        XCTAssertEqual(w1.effectiveSessionsPerWeek, 2, "Week 1 at baseline")
+
+        let w5 = makeProfile(fitnessLevel: .experienced, goal: .returnToTraining,
+                             weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 4)
+        XCTAssertEqual(w5.effectiveSessionsPerWeek, 3,
+                       "Return-to-training earns first bump only at week 5")
+
+        // At the same week, a non-return experienced user would be further ahead.
+        let nonReturn = makeProfile(fitnessLevel: .experienced, goal: .generalFitness,
+                                    weeklyCardioFrequency: 2, availableDays: 7, weeksAgo: 4)
+        XCTAssertEqual(nonReturn.effectiveSessionsPerWeek, 4,
+                       "Non-return user ramps faster (step=2)")
+    }
+
+    func testBeginnerRampsSlowly() {
+        // Beginner: step = 4. Baseline = 2, ceiling = 7.
+        let w1 = makeProfile(fitnessLevel: .beginner, weeklyCardioFrequency: 0,
+                             availableDays: 7, weeksAgo: 0)
+        XCTAssertEqual(w1.effectiveSessionsPerWeek, 2)
+
+        let w5 = makeProfile(fitnessLevel: .beginner, weeklyCardioFrequency: 0,
+                             availableDays: 7, weeksAgo: 4)
+        XCTAssertEqual(w5.effectiveSessionsPerWeek, 3, "Beginner first bump at week 5")
+    }
+
+    func testOccasionalRampsEveryThreeWeeks() {
+        // Occasional: step = 3. Baseline = 3, ceiling = 6.
+        let w1 = makeProfile(fitnessLevel: .occasional, weeklyCardioFrequency: 3,
+                             availableDays: 6, weeksAgo: 0)
+        XCTAssertEqual(w1.effectiveSessionsPerWeek, 3)
+
+        let w4 = makeProfile(fitnessLevel: .occasional, weeklyCardioFrequency: 3,
+                             availableDays: 6, weeksAgo: 3)
+        XCTAssertEqual(w4.effectiveSessionsPerWeek, 4)
+    }
+
+    func testPhaseResetRestartsRamp() {
+        // weekNumber resets when phaseStartDate resets (e.g., focus transition).
+        // A user at week 7 with 3 bumps drops back to 0 bumps after reset.
+        let profile = makeProfile(
+            fitnessLevel: .experienced,
+            weeklyCardioFrequency: 2,
+            availableDays: 7,
+            weeksAgo: 6
+        )
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5, "Pre-reset: 3 bumps")
+
+        profile.phaseStartDate = Date() // simulate focus transition
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 2,
+                       "Phase reset drops weekNumber to 1 → back to baseline")
+    }
+
+    // MARK: Ceiling and floor clamping
 
     func testBaselineEqualToCeilingStays() {
         let profile = makeProfile(
             fitnessLevel: .regular,
             weeklyCardioFrequency: 5,
-            availableDays: 5
+            availableDays: 5,
+            weeksAgo: 10
         )
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
-                       "If baseline already equals ceiling, stay there")
+                       "If baseline already equals ceiling, stay there regardless of week")
         XCTAssertFalse(profile.hasHeadroomToBuild)
     }
 
     func testCeilingClampsLowerThanBaseline() {
-        // If the user reports training more than they're available for,
-        // the plan respects the ceiling they actually committed to.
         let profile = makeProfile(
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 4,
-            availableDays: 3
+            availableDays: 3,
+            weeksAgo: 10
         )
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 3,
                        "Plan may not exceed the user-selected ceiling")
@@ -127,14 +218,18 @@ final class EffectiveSessionsTests: XCTestCase {
         XCTAssertEqual(crazy.availableSessionsCeiling, 7, "Max 7 days per week")
     }
 
+    // MARK: Focus independence
+
     func testTotalIsIndependentOfFocus() {
         for focus in TrainingFocus.allCases {
             let profile = makeProfile(
                 focus: focus,
                 fitnessLevel: .regular,
                 weeklyCardioFrequency: 3,
-                availableDays: 5
+                availableDays: 5,
+                weeksAgo: 4
             )
+            // regular step=2, weekNumber=5, earned=(5-1)/2=2, target=min(5, 3+2)=5
             XCTAssertEqual(
                 profile.effectiveSessionsPerWeek, 5,
                 "focus \(focus) must not override the baseline-ramp total"
@@ -149,7 +244,8 @@ final class EffectiveSessionsTests: XCTestCase {
             focus: .buildingBase,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 4,
-            availableDays: 7
+            availableDays: 7,
+            weeksAgo: 10
         )
         XCTAssertEqual(profile.effectiveIntervalSessions, 0)
         XCTAssertEqual(profile.effectiveTargetZoneSessions,
@@ -162,7 +258,8 @@ final class EffectiveSessionsTests: XCTestCase {
             focus: .activeRecovery,
             fitnessLevel: .regular,
             weeklyCardioFrequency: 2,
-            availableDays: 4
+            availableDays: 4,
+            weeksAgo: 6
         )
         XCTAssertEqual(profile.effectiveIntervalSessions, 0)
         XCTAssertEqual(profile.effectiveTargetZoneSessions,
@@ -170,24 +267,26 @@ final class EffectiveSessionsTests: XCTestCase {
     }
 
     func testDevelopingSpeedScalesIntervalsWithinCap() {
-        // Roughly one interval per three sessions, capped at 2.
-        // experienced + freq 1 + avail 3 → target 3 (baseline 1 + ramp 3,
-        // capped to 3) → 1 interval.
+        // experienced freq=1 avail=3 weeksAgo=4 → weekNumber=5, step=2,
+        // earned=2, target=min(3, 1+2)=3 → 1 interval
         let three = makeProfile(
             focus: .developingSpeed,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 1,
-            availableDays: 3
+            availableDays: 3,
+            weeksAgo: 4
         )
         XCTAssertEqual(three.effectiveSessionsPerWeek, 3)
         XCTAssertEqual(three.effectiveIntervalSessions, 1)
 
-        // experienced + freq 4 + avail 7 → target 7 → 2 intervals (capped)
+        // experienced freq=4 avail=7 weeksAgo=10 → weekNumber=11, step=2,
+        // earned=5, target=min(7, 4+5)=7 → 2 intervals (capped)
         let seven = makeProfile(
             focus: .developingSpeed,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 4,
-            availableDays: 7
+            availableDays: 7,
+            weeksAgo: 10
         )
         XCTAssertEqual(seven.effectiveSessionsPerWeek, 7)
         XCTAssertEqual(seven.effectiveIntervalSessions, 2,
@@ -195,21 +294,25 @@ final class EffectiveSessionsTests: XCTestCase {
     }
 
     func testPeakPerformanceScalesIntervalsWithinCap() {
-        // Roughly one interval per two sessions, capped at 3.
+        // experienced freq=2 avail=4 weeksAgo=4 → weekNumber=5, step=2,
+        // earned=2, target=min(4, 2+2)=4 → 2 intervals
         let four = makeProfile(
             focus: .peakPerformance,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 2,
-            availableDays: 4
+            availableDays: 4,
+            weeksAgo: 4
         )
         XCTAssertEqual(four.effectiveSessionsPerWeek, 4)
         XCTAssertEqual(four.effectiveIntervalSessions, 2)
 
+        // experienced freq=4 avail=7 weeksAgo=10 → target=7 → 3 intervals
         let seven = makeProfile(
             focus: .peakPerformance,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 4,
-            availableDays: 7
+            availableDays: 7,
+            weeksAgo: 10
         )
         XCTAssertEqual(seven.effectiveSessionsPerWeek, 7)
         XCTAssertEqual(seven.effectiveIntervalSessions, 3,
@@ -217,25 +320,27 @@ final class EffectiveSessionsTests: XCTestCase {
     }
 
     func testTargetZonePlusIntervalsAlwaysSumToTotal() {
-        // Full matrix — every (focus, fitnessLevel, freq, ceiling) must
-        // sum cleanly to the planned total.
+        // Full matrix across focuses and fitness levels, at various week numbers.
         for focus in TrainingFocus.allCases {
             for level in FitnessLevel.allCases {
-                for freq in 0...7 {
-                    for days in 1...7 {
-                        let p = makeProfile(
-                            focus: focus,
-                            fitnessLevel: level,
-                            weeklyCardioFrequency: freq,
-                            availableDays: days
-                        )
-                        XCTAssertEqual(
-                            p.effectiveTargetZoneSessions + p.effectiveIntervalSessions,
-                            p.effectiveSessionsPerWeek,
-                            "\(focus)/\(level)/\(freq)→\(days): target-zone + intervals must equal total"
-                        )
-                        XCTAssertGreaterThanOrEqual(p.effectiveTargetZoneSessions, 0)
-                        XCTAssertGreaterThanOrEqual(p.effectiveIntervalSessions, 0)
+                for freq in [0, 2, 4, 7] {
+                    for days in [1, 3, 5, 7] {
+                        for weeksAgo in [0, 4, 10] {
+                            let p = makeProfile(
+                                focus: focus,
+                                fitnessLevel: level,
+                                weeklyCardioFrequency: freq,
+                                availableDays: days,
+                                weeksAgo: weeksAgo
+                            )
+                            XCTAssertEqual(
+                                p.effectiveTargetZoneSessions + p.effectiveIntervalSessions,
+                                p.effectiveSessionsPerWeek,
+                                "\(focus)/\(level)/freq\(freq)/avail\(days)/w\(weeksAgo): sum must equal total"
+                            )
+                            XCTAssertGreaterThanOrEqual(p.effectiveTargetZoneSessions, 0)
+                            XCTAssertGreaterThanOrEqual(p.effectiveIntervalSessions, 0)
+                        }
                     }
                 }
             }
@@ -251,6 +356,7 @@ final class EffectiveSessionsTests: XCTestCase {
                 fitnessLevel: .experienced,
                 weeklyCardioFrequency: 4,
                 availableDays: 7,
+                weeksAgo: 10,
                 intensityConstraint: .avoidHighIntensity
             )
             XCTAssertEqual(profile.effectiveIntervalSessions, 0,
@@ -262,15 +368,15 @@ final class EffectiveSessionsTests: XCTestCase {
     }
 
     func testAvoidHighIntensityStillHonorsPlannedTotal() {
-        // Regression guard — capping intervals must never cap the total.
         let profile = makeProfile(
             focus: .peakPerformance,
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 3,
             availableDays: 6,
+            weeksAgo: 10,
             intensityConstraint: .avoidHighIntensity
         )
-        // experienced + freq 3 + avail 6 → baseline 3 + ramp 3 = 6, capped 6
+        // experienced step=2, weekNumber=11, earned=5, target=min(6, 3+5)=6
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 6)
         XCTAssertEqual(profile.effectiveTargetZoneSessions, 6)
     }
@@ -278,6 +384,7 @@ final class EffectiveSessionsTests: XCTestCase {
     // MARK: Headroom signal for UI
 
     func testHasHeadroomOnlyWhenCeilingExceedsCurrent() {
+        // Week 1: experienced freq=2 avail=7 → target=2, ceiling=7 → headroom
         let room = makeProfile(
             fitnessLevel: .experienced,
             weeklyCardioFrequency: 2,
@@ -285,12 +392,61 @@ final class EffectiveSessionsTests: XCTestCase {
         )
         XCTAssertTrue(room.hasHeadroomToBuild)
 
+        // Far in the future: target should have reached ceiling → no headroom
         let atCeiling = makeProfile(
             fitnessLevel: .experienced,
-            weeklyCardioFrequency: 7,
-            availableDays: 7
+            weeklyCardioFrequency: 2,
+            availableDays: 7,
+            weeksAgo: 20
         )
         XCTAssertFalse(atCeiling.hasHeadroomToBuild,
-                       "Baseline already at ceiling — no room to build")
+                       "After enough weeks the ramp reaches the ceiling")
+    }
+
+    // MARK: Consistency gating via recommendation engine
+
+    func testMissedSessionsGateBlocksRampedVolumeExperience() {
+        // An experienced user at week 7 has a target of 5 (baseline 2 + 3 bumps).
+        // If they only logged 1 session last week, PhaseManager triggers the
+        // "repeat last week" fallback — they never actually *experience* the
+        // ramped target. This test proves the consistency gate fires.
+        let profile = makeProfile(
+            fitnessLevel: .experienced,
+            weeklyCardioFrequency: 2,
+            availableDays: 7,
+            weeksAgo: 6
+        )
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
+                       "Target has ramped to 5 by week 7")
+
+        // Build 1 workout in last week — 4 missed out of 5
+        let calendar = Calendar.current
+        let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: Date().startOfWeek)!
+        let sparse = [makeWorkout(date: lastWeekStart.addingTimeInterval(43200))]
+
+        XCTAssertTrue(
+            PhaseManager.missedSessionsLastWeek(workouts: sparse, profile: profile),
+            "Consistency gate must fire when user missed ≥ half of ramped target"
+        )
+    }
+
+    // MARK: - Helpers
+
+    private func makeWorkout(date: Date) -> WorkoutEntry {
+        let hrData = HeartRateData(
+            avgHR: 140, maxHR: 155, minHR: 130,
+            timeInZone2: 30 * 60, timeInZone4Plus: 0,
+            hrDrift: 2.0, recoveryHR: 30, samples: []
+        )
+        return WorkoutEntry(
+            date: date,
+            exerciseType: .treadmill,
+            duration: 45 * 60,
+            metrics: ["speed": 3.5, "incline": 3.0],
+            sessionType: .zone2,
+            heartRateData: hrData,
+            phase: .phase1,
+            weekNumber: 4
+        )
     }
 }
