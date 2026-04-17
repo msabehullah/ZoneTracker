@@ -126,6 +126,38 @@ struct AssessmentDraft: Equatable {
         isBeginner ? 20 : typicalWorkoutMinutes
     }
 
+    // MARK: - Plan Baseline Preview
+    //
+    // Mirrors the weekly-target baseline rules on `UserProfile` so the
+    // onboarding connect step can show the same starting target and
+    // ceiling the plan overview will render once the draft commits. The
+    // only difference is which stored field feeds `baselineSessionsPerWeek`:
+    // draft uses `effectiveWeeklyCardioFrequency` (beginner-gated), which
+    // is exactly the value that lands on `UserProfile.weeklyCardioFrequency`
+    // during `apply(to:resetFocus:)`. `EffectiveSessionsTests` pins the
+    // post-apply parity so the two paths cannot drift.
+
+    /// Pre-commit baseline — matches `UserProfile.baselineSessionsPerWeek`.
+    var baselineSessionsPerWeek: Int {
+        if fitnessLevel == .beginner { return 2 }
+        return max(0, min(7, effectiveWeeklyCardioFrequency))
+    }
+
+    /// Pre-commit ceiling — matches `UserProfile.availableSessionsCeiling`.
+    var availableSessionsCeiling: Int {
+        max(1, min(7, availableTrainingDays))
+    }
+
+    /// Pre-commit starting target — matches `UserProfile.effectiveSessionsPerWeek`.
+    var startingSessionsPerWeek: Int {
+        max(1, min(availableSessionsCeiling, baselineSessionsPerWeek))
+    }
+
+    /// Pre-commit headroom flag — matches `UserProfile.hasHeadroomToBuild`.
+    var hasHeadroomToBuild: Bool {
+        availableSessionsCeiling > startingSessionsPerWeek
+    }
+
     // MARK: - Commit
 
     /// Single point of mutation back into the profile.

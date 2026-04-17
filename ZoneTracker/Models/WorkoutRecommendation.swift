@@ -56,6 +56,11 @@ struct WorkoutRecommendation: Identifiable {
         case "strokeRate": return "Strokes/min"
         case "pace": return "Pace"
         case "weight": return "Weight"
+        case "distanceMeters": return "Distance"
+        case "timeInTarget": return "Time on Target"
+        case "completedSegments": return "Completed Segments"
+        case "plannedSegments": return "Planned Segments"
+        case "calories": return "Calories"
         default: return key.capitalized
         }
     }

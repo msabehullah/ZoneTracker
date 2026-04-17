@@ -44,9 +44,9 @@ final class AccountStore {
     /// re-signs start with `displayName == nil`. Fall back gracefully rather
     /// than printing "Signed in with Apple" flatly for returning users.
     var displayNamePresentation: String {
-        if let displayName, !displayName.isEmpty { return displayName }
         if let email, !email.isEmpty { return email }
-        return "Signed in with Apple"
+        if let displayName, !displayName.isEmpty { return displayName }
+        return "Email unavailable from Apple Sign In"
     }
 
     /// Display-friendly secondary line. Apple may hide email via Private Relay,
@@ -54,7 +54,7 @@ final class AccountStore {
     /// leaving a blank.
     var emailPresentation: String {
         if let email, !email.isEmpty { return email }
-        return "Apple ID email hidden or private relay"
+        return "Email unavailable from Apple Sign In"
     }
 
     func restoreSession() async {

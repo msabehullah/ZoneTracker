@@ -109,84 +109,43 @@ final class PhaseManagerTests: XCTestCase {
 
     // MARK: Missed-session gate scales with plan volume
     //
-    // The gate used to be a hardcoded "missed ≥ 2" absolute threshold. That
-    // made a 5-of-7 week look like a failure. Post-pass-4 the rule is
-    // relative: trigger only when the user missed at least half their
-    // planned target, with a floor of 2 so tiny plans can't no-op.
+    // The gate fires when the user missed at least half their planned target
+    // (minimum absolute floor of 2). Tests use the `target:` parameter
+    // overload to test gate logic independently from target computation.
+    // WeeklyTargetService tests cover the consistency-aware target itself.
 
     func testSevenDayPlanNotPenalizedAtFiveOfSeven() {
-        // experienced + freq 4 + avail 7, far enough in that ramp has
-        // reached ceiling. step=2, need earned≥3 → weekNumber≥7 → weeksAgo=6.
-        let profile = UserProfile()
-        profile.fitnessLevel = .experienced
-        profile.weeklyCardioFrequency = 4
-        profile.availableTrainingDays = 7
-        profile.phaseStartDate = Calendar.current.date(
-            byAdding: .weekOfYear, value: -6, to: Date()
-        )!
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 7)
-
-        // completed 5 → missed 2 → threshold max(2, ceil(7/2)=4)=4 → no trigger.
+        // target=7, completed 5 → missed 2 → threshold max(2, ceil(7/2)=4)=4 → no trigger.
         let workouts = lastWeekWorkouts(count: 5)
         XCTAssertFalse(
-            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, target: 7),
             "A 5-of-7 week is still a great week — must not be flagged as missed"
         )
     }
 
     func testSevenDayPlanTriggersOnClearDropOff() {
-        let profile = UserProfile()
-        profile.fitnessLevel = .experienced
-        profile.weeklyCardioFrequency = 4
-        profile.availableTrainingDays = 7
-        profile.phaseStartDate = Calendar.current.date(
-            byAdding: .weekOfYear, value: -6, to: Date()
-        )!
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 7)
-
+        // target=7, completed 3 → missed 4 → threshold=4 → triggers.
         let workouts = lastWeekWorkouts(count: 3)
         XCTAssertTrue(
-            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, target: 7),
             "3-of-7 is a real drop-off — should trigger the 'repeat' fallback"
         )
     }
 
     func testLowFrequencyPlanStillGatedOnTwoMisses() {
-        // occasional + freq 2 + avail 3. step=3, baseline=2.
-        // Need earned≥1 → weekNumber≥4 → weeksAgo=3.
-        let profile = UserProfile()
-        profile.fitnessLevel = .occasional
-        profile.weeklyCardioFrequency = 2
-        profile.availableTrainingDays = 3
-        profile.phaseStartDate = Calendar.current.date(
-            byAdding: .weekOfYear, value: -3, to: Date()
-        )!
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 3)
-
-        // completed 1 → missed 2 → threshold max(2, ceil(3/2)=2)=2 → triggers.
+        // target=3, completed 1 → missed 2 → threshold max(2, ceil(3/2)=2)=2 → triggers.
         let workouts = lastWeekWorkouts(count: 1)
         XCTAssertTrue(
-            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, target: 3),
             "1-of-3 is a real slip on a small plan — must still trigger"
         )
     }
 
     func testFiveDayPlanNotPenalizedAtThreeOfFive() {
-        // regular + freq 3 + avail 5. step=2, baseline=3.
-        // Need earned≥2 → weekNumber≥5 → weeksAgo=4.
-        let profile = UserProfile()
-        profile.fitnessLevel = .regular
-        profile.weeklyCardioFrequency = 3
-        profile.availableTrainingDays = 5
-        profile.phaseStartDate = Calendar.current.date(
-            byAdding: .weekOfYear, value: -4, to: Date()
-        )!
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5)
-
-        // completed 3 → missed 2 → threshold max(2, ceil(5/2)=3)=3 → no trigger.
+        // target=5, completed 3 → missed 2 → threshold max(2, ceil(5/2)=3)=3 → no trigger.
         let workouts = lastWeekWorkouts(count: 3)
         XCTAssertFalse(
-            PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile),
+            PhaseManager.missedSessionsLastWeek(workouts: workouts, target: 5),
             "3-of-5 shouldn't trigger fallback — 40% miss rate on a mid-volume plan"
         )
     }

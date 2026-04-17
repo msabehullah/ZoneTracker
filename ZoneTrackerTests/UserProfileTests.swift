@@ -199,27 +199,26 @@ final class UserProfileTests: XCTestCase {
 
     // MARK: - Effective Session Counts
 
-    func testEffectiveSessionsRampsFromBaselineOverTime() {
-        // Post-pass-5: plan starts at baseline and grows +1 every
-        // `weeksPerRampStep` weeks toward the ceiling.
+    func testEffectiveSessionsPerWeekReturnsBaseline() {
+        // Post-pass-6: profile-only `effectiveSessionsPerWeek` returns
+        // baseline (workout-free starting value). The consistency-aware
+        // target lives in WeeklyTargetService.
         let profile = UserProfile()
-        profile.fitnessLevel = .experienced // step = 2
+        profile.fitnessLevel = .experienced
         profile.focus = .peakPerformance
         profile.weeklyCardioFrequency = 2
         profile.availableTrainingDays = 7
 
-        // Week 1: baseline only
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 2,
-                       "Week 1 starts at baseline")
-        XCTAssertTrue(profile.hasHeadroomToBuild)
+                       "Profile-only API returns baseline — no ramp without workouts")
+        XCTAssertTrue(profile.hasHeadroomToBuild, "Baseline < ceiling → headroom")
 
-        // Simulate 6 weeks in: weekNumber=7, earned=3, target=min(7, 2+3)=5
+        // Even far in the future, profile returns baseline (time alone doesn't help)
         profile.phaseStartDate = Calendar.current.date(
             byAdding: .weekOfYear, value: -6, to: Date()
         )!
-        XCTAssertEqual(profile.effectiveSessionsPerWeek, 5,
-                       "After 6 weeks, experienced user has earned 3 bumps")
-        XCTAssertTrue(profile.hasHeadroomToBuild, "5 of 7 leaves headroom")
+        XCTAssertEqual(profile.effectiveSessionsPerWeek, 2,
+                       "Profile-only API stays at baseline regardless of time passed")
 
         // At baseline == ceiling, no headroom
         profile.weeklyCardioFrequency = 7
@@ -230,16 +229,12 @@ final class UserProfileTests: XCTestCase {
         let profile = UserProfile()
         profile.fitnessLevel = .experienced
         profile.focus = .developingSpeed
-        profile.weeklyCardioFrequency = 2
+        profile.weeklyCardioFrequency = 4
         profile.availableTrainingDays = 4
         profile.intensityConstraint = .avoidHighIntensity
-        // Simulate enough weeks for ramp to reach ceiling: step=2, need earned≥2
-        // weekNumber≥5 → weeksAgo=4
-        profile.phaseStartDate = Calendar.current.date(
-            byAdding: .weekOfYear, value: -4, to: Date()
-        )!
+        // Profile effectiveSessionsPerWeek = min(4, 4) = 4
         XCTAssertEqual(profile.effectiveSessionsPerWeek, 4,
-                       "Ramp reaches ceiling after enough weeks")
+                       "Baseline = ceiling when freq matches avail")
         XCTAssertEqual(profile.effectiveIntervalSessions, 0, "Avoid high intensity should block intervals")
         XCTAssertEqual(profile.effectiveTargetZoneSessions, 4,
                        "All sessions become target zone when intervals are blocked")

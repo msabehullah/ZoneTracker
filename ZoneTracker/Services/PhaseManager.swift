@@ -164,9 +164,12 @@ struct PhaseManager {
         workouts.inCurrentWeek().count
     }
 
+    /// Core gate: checks whether the user missed enough sessions last week
+    /// relative to a given target. Trigger when the user missed at least
+    /// half their planned target (minimum absolute floor of 2).
     static func missedSessionsLastWeek(
         workouts: [WorkoutEntry],
-        profile: UserProfile
+        target: Int
     ) -> Bool {
         let calendar = Calendar.current
         let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: Date().startOfWeek) ?? Date()
@@ -176,18 +179,29 @@ struct PhaseManager {
             $0.date >= lastWeekStart && $0.date < lastWeekEnd
         }
 
-        // Gate scales with the user's planned volume. A 3-day plan that drops
-        // to 1 session is a real slip (miss 2 of 3) and deserves the "repeat
-        // last week" nudge. A 7-day plan that logs 5 sessions is still a
-        // strong week and shouldn't trigger fallback. Rule: trigger only if
-        // the user missed at least half of their planned target, with a
-        // minimum absolute floor of 2 so tiny plans can't no-op the gate.
-        let target = profile.effectiveSessionsPerWeek
         let completed = lastWeekWorkouts.count
         let missed = target - completed
         guard missed >= 2 else { return false }
         let softThreshold = Int(ceil(Double(target) / 2.0))
         return missed >= max(2, softThreshold)
+    }
+
+    /// Convenience overload: computes last week's actual target from
+    /// profile + workouts, then checks the gate. Uses the target that
+    /// was in effect during last week — not the current (potentially
+    /// bumped) target — so a week that met its actual target is never
+    /// retroactively penalized by a bump it just earned.
+    static func missedSessionsLastWeek(
+        workouts: [WorkoutEntry],
+        profile: UserProfile
+    ) -> Bool {
+        let lastWeekStart = Calendar.current.date(
+            byAdding: .weekOfYear, value: -1, to: Date().startOfWeek
+        )!
+        let target = WeeklyTargetService.currentTarget(
+            profile: profile, workouts: workouts, asOf: lastWeekStart
+        )
+        return missedSessionsLastWeek(workouts: workouts, target: target)
     }
 
     // MARK: - Helpers

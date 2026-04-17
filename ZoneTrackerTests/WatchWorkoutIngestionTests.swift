@@ -143,6 +143,30 @@ final class WatchWorkoutIngestionTests: XCTestCase {
         XCTAssertEqual(metrics["completedSegments"], 3)
     }
 
+    func testIngestExposesFriendlySupplementalRowsSeparatelyFromExerciseMetrics() throws {
+        let context = try makeContext()
+        let profile = UserProfile()
+        context.insert(profile)
+
+        guard let workout = WatchWorkoutIngestionService.ingest(
+            completion: makePayload(),
+            profile: profile,
+            context: context,
+            existingWorkouts: []
+        ) else {
+            XCTFail("ingest returned nil for fresh payload")
+            return
+        }
+
+        XCTAssertTrue(workout.exerciseMetrics.isEmpty)
+
+        let titles = workout.supplementalMetricRows.map(\.title)
+        XCTAssertTrue(titles.contains("Distance"))
+        XCTAssertTrue(titles.contains("Time on Target"))
+        XCTAssertTrue(titles.contains("Calories"))
+        XCTAssertTrue(titles.contains("Segments"))
+    }
+
     // MARK: - Backward-compat decode
 
     func testCompletionPayloadDecodesLegacyEnvelopeWithoutNewFields() throws {

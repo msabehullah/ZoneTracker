@@ -7,6 +7,7 @@ struct HistoryView: View {
     @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     @Environment(\.modelContext) private var context
     let profile: UserProfile
+    var onOpenSettings: (() -> Void)? = nil
 
     @State private var viewModel = HistoryViewModel()
     @State private var selectedWorkout: WorkoutEntry?
@@ -25,6 +26,18 @@ struct HistoryView: View {
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                if let onOpenSettings {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: onOpenSettings) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .accessibilityLabel("Open Settings")
+                    }
+                }
+            }
             .sheet(item: $selectedWorkout) { workout in
                 WorkoutDetailView(workout: workout, profile: profile)
             }

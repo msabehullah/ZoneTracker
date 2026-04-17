@@ -5,22 +5,23 @@ import SwiftUI
 struct ContentView: View {
     let profile: UserProfile
     @State private var selectedSection: AppSection = .dashboard
+    @State private var showingSettings = false
 
     var body: some View {
         TabView(selection: $selectedSection) {
-            DashboardView(profile: profile)
+            DashboardView(profile: profile, onOpenSettings: { showingSettings = true })
                 .tag(AppSection.dashboard)
 
-            HistoryView(profile: profile)
+            HistoryView(profile: profile, onOpenSettings: { showingSettings = true })
                 .tag(AppSection.history)
 
-            ProgressDashboardView(profile: profile)
+            ProgressDashboardView(profile: profile, onOpenSettings: { showingSettings = true })
                 .tag(AppSection.progress)
-
-            SettingsView(profile: profile)
-                .tag(AppSection.settings)
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(profile: profile)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             AppSectionBar(selectedSection: $selectedSection)
                 .padding(.horizontal, 12)
@@ -45,7 +46,6 @@ private enum AppSection: Int, CaseIterable, Identifiable {
     case dashboard
     case history
     case progress
-    case settings
 
     var id: Int { rawValue }
 
@@ -54,7 +54,6 @@ private enum AppSection: Int, CaseIterable, Identifiable {
         case .dashboard: return "Dashboard"
         case .history: return "History"
         case .progress: return "Progress"
-        case .settings: return "Settings"
         }
     }
 
@@ -63,7 +62,6 @@ private enum AppSection: Int, CaseIterable, Identifiable {
         case .dashboard: return "heart.fill"
         case .history: return "list.bullet.rectangle"
         case .progress: return "chart.line.uptrend.xyaxis"
-        case .settings: return "gearshape.fill"
         }
     }
 }
@@ -115,7 +113,7 @@ private extension ContentView {
         guard let index = arguments.firstIndex(of: "-codex-selected-tab"),
               arguments.indices.contains(index + 1),
               let tab = Int(arguments[index + 1]),
-              let section = AppSection(rawValue: max(0, min(3, tab))) else {
+              let section = AppSection(rawValue: max(0, min(2, tab))) else {
             return nil
         }
         return section

@@ -16,6 +16,7 @@ struct WorkoutDetailView: View {
                     heartRateChart
                     zoneBreakdown
                     metricsSection
+                    supplementalMetricsSection
                     driftSection
 
                     if let notes = workout.notes, !notes.isEmpty {
@@ -201,13 +202,13 @@ struct WorkoutDetailView: View {
 
     private var metricsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Settings")
+            Text("Workout Settings")
                 .font(.headline)
                 .foregroundColor(.white)
 
             let defs = workout.exerciseType.metricDefinitions
             ForEach(defs) { def in
-                if let value = workout.metrics[def.key] {
+                if let value = workout.exerciseMetrics[def.key] {
                     HStack {
                         Text(def.name)
                             .font(.subheadline)
@@ -246,6 +247,33 @@ struct WorkoutDetailView: View {
         .padding()
         .background(Color.cardBackground)
         .cornerRadius(16)
+    }
+
+    private var supplementalMetricsSection: some View {
+        Group {
+            if !workout.supplementalMetricRows.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Session Summary")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    ForEach(workout.supplementalMetricRows) { metric in
+                        HStack {
+                            Text(metric.title)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                            Spacer()
+                            Text(metric.value)
+                                .font(.system(.subheadline, design: .monospaced))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .padding()
+                .background(Color.cardBackground)
+                .cornerRadius(16)
+            }
+        }
     }
 
     // MARK: - Drift

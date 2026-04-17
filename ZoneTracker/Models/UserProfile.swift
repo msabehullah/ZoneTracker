@@ -156,19 +156,15 @@ final class UserProfile {
     //   * `availableTrainingDays` — how many days per week they *could* train.
     //     This is the ceiling the plan ramps toward over time.
     //
-    // The plan starts at the user's baseline and earns +1 session every
-    // `weeksPerRampStep` weeks, up to the ceiling. The ramp speed depends
-    // on fitness level (experienced/regular ramp every 2 weeks; occasional
-    // every 3; beginner/return-to-training every 4). Week 1 always starts
-    // at baseline — no instant jump.
+    // The plan starts at baseline and earns +1 bumps through demonstrated
+    // consistency (see `WeeklyTargetService`). The live, consistency-aware
+    // target lives in `WeeklyTargetService.currentTarget(profile:workouts:)`
+    // — any consumer that has workout history should call the service.
     //
-    // `weekNumber` (weeks since `phaseStartDate`) drives the ramp. Since
-    // `phaseStartDate` resets on focus transitions, the ramp restarts
-    // naturally when the user enters a new training phase. Consistency
-    // gating happens at the recommendation layer: when
-    // `PhaseManager.missedSessionsLastWeek` fires, the engine falls back
-    // to "repeat last week," preventing the user from being pushed toward
-    // a ramped target they haven't been hitting.
+    // The properties below are the *workout-free* fallback: baseline
+    // clamped to ceiling, with no ramp. PlanOverview and ProgramExplanation
+    // (which render for a brand-new user with no history) use these. They
+    // show the starting value, which is correct at onboarding.
     //
     // `focus` never touches the total — it only shapes composition
     // (target-zone vs interval share).
@@ -195,72 +191,37 @@ final class UserProfile {
         }
     }
 
-    /// How many +1 bumps the plan has earned based on time in the current
-    /// focus. Week 1 earns 0 bumps. Each `weeksPerRampStep` weeks after
-    /// that earns another +1, up to however many are needed to reach the
-    /// ceiling. Since `weekNumber` resets when focus transitions fire (via
-    /// `phaseStartDate`), the ramp restarts naturally after phase changes.
-    var earnedRampBumps: Int {
-        max(0, (weekNumber - 1) / weeksPerRampStep)
-    }
-
     /// The absolute ceiling the user said they *could* train — the plan will
     /// never exceed this even as they ramp up. Clamped to [1, 7].
     var availableSessionsCeiling: Int {
         max(1, min(7, availableTrainingDays))
     }
 
-    /// The plan's actual current weekly target: baseline + time-earned
-    /// bumps, capped by the user's stated ceiling, never below one.
+    /// Week-1 / workout-free starting target: baseline clamped to ceiling.
     ///
-    /// The ramp is deterministic from `weekNumber` (weeks since
-    /// `phaseStartDate`). Consistency gating happens at the recommendation
-    /// layer: `PhaseManager.missedSessionsLastWeek` triggers a "repeat
-    /// last week" fallback that prevents the user from experiencing ramped
-    /// volume when they haven't been showing up. The plan *target* still
-    /// grows — the engine just doesn't push them to hit it until they've
-    /// been consistent again.
-    var currentPlannedSessionsPerWeek: Int {
-        let target = baselineSessionsPerWeek + earnedRampBumps
-        return max(1, min(availableSessionsCeiling, target))
-    }
-
-    /// Authoritative weekly session target used everywhere downstream
-    /// (Dashboard, Progress, PlanOverview, ProgramExplanation). Reads the
-    /// current planned target so users aren't shown their ceiling as if it
-    /// were a commitment.
+    /// For the live consistency-aware target that accounts for demonstrated
+    /// training history, use `WeeklyTargetService.currentTarget(profile:workouts:)`.
+    /// This property exists for contexts without workout data (onboarding,
+    /// PlanOverview, ProgramExplanation for new users).
     var effectiveSessionsPerWeek: Int {
-        currentPlannedSessionsPerWeek
+        max(1, min(availableSessionsCeiling, baselineSessionsPerWeek))
     }
 
-    /// True when the plan hasn't maxed out the user's stated capacity yet —
-    /// UI uses this to show the "building toward N days/week" line so the
-    /// ceiling they selected doesn't feel ignored.
+    /// True when the ceiling exceeds the starting target — UI uses this to
+    /// show the "building toward N days/week" line at onboarding.
     var hasHeadroomToBuild: Bool {
-        availableSessionsCeiling > currentPlannedSessionsPerWeek
+        availableSessionsCeiling > effectiveSessionsPerWeek
     }
 
-    /// Number of interval days per week. Composition is focus-driven (base
-    /// focus stays all target-zone; intervals ramp up through developing-speed
-    /// and peak). Caps keep the interval share sane even at 7 training days so
-    /// we don't flip the week majority-hard. Respects `.avoidHighIntensity`.
+    /// Number of interval days per week based on the starting target.
+    /// For the live split, use `WeeklyTargetService.intervalSessions(total:profile:)`.
     var effectiveIntervalSessions: Int {
-        if intensityConstraint == .avoidHighIntensity { return 0 }
-        let total = effectiveSessionsPerWeek
-        switch focus {
-        case .buildingBase, .activeRecovery:
-            return 0
-        case .developingSpeed:
-            // Roughly one interval per three sessions, capped at 2.
-            return min(2, total / 3)
-        case .peakPerformance:
-            // Roughly one interval per two sessions, capped at 3.
-            return min(3, total / 2)
-        }
+        WeeklyTargetService.intervalSessions(
+            total: effectiveSessionsPerWeek, profile: self
+        )
     }
 
-    /// Remaining sessions after intervals are allocated become target-zone
-    /// days. Always computed as a complement so the two always sum to total.
+    /// Remaining sessions after intervals — complement of interval count.
     var effectiveTargetZoneSessions: Int {
         max(0, effectiveSessionsPerWeek - effectiveIntervalSessions)
     }

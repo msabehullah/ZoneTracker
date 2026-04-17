@@ -41,9 +41,9 @@ class DashboardViewModel {
             )
         }
 
-        // Session counts
+        // Session counts — use the consistency-aware target from the service
         sessionsThisWeek = workouts.inCurrentWeek().count
-        targetSessionsThisWeek = profile.effectiveSessionsPerWeek
+        targetSessionsThisWeek = WeeklyTargetService.currentTarget(profile: profile, workouts: workouts)
         totalSessions = workouts.count
 
         // Streak

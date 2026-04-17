@@ -16,14 +16,23 @@ struct RecommendationEngine {
             return FirstWorkoutStrategy.recommend(for: profile)
         }
 
-        // Check consistency: if user missed 2+ sessions, repeat last week
-        if PhaseManager.missedSessionsLastWeek(workouts: workouts, profile: profile) {
+        // Resolve targets: current-week for planning, last-week for the consistency gate.
+        let weeklyTarget = WeeklyTargetService.currentTarget(profile: profile, workouts: workouts)
+        let lastWeekStart = Calendar.current.date(
+            byAdding: .weekOfYear, value: -1, to: Date().startOfWeek
+        )!
+        let lastWeekTarget = WeeklyTargetService.currentTarget(
+            profile: profile, workouts: workouts, asOf: lastWeekStart
+        )
+
+        // Check consistency: if user missed 2+ sessions relative to LAST week's target
+        if PhaseManager.missedSessionsLastWeek(workouts: workouts, target: lastWeekTarget) {
             return repeatLastWorkout(lastWorkout, profile: profile,
                 reasoning: "Consistency is key. Let's lock in this week before moving forward.")
         }
 
         // Determine what type of session is next
-        let nextSessionType = determineNextSessionType(profile: profile, workouts: sorted)
+        let nextSessionType = determineNextSessionType(profile: profile, workouts: sorted, weeklyTarget: weeklyTarget)
 
         // Build recommendation based on session type
         if nextSessionType.isInterval {
@@ -45,14 +54,15 @@ struct RecommendationEngine {
 
     private static func determineNextSessionType(
         profile: UserProfile,
-        workouts: [WorkoutEntry]
+        workouts: [WorkoutEntry],
+        weeklyTarget: Int
     ) -> SessionType {
         let focus = profile.focus
         let thisWeek = workouts.inCurrentWeek()
         let zone2Count = thisWeek.zone2Sessions().count
         let intervalCount = thisWeek.intervalSessions().count
-        let targetZoneSessions = profile.effectiveTargetZoneSessions
-        let targetIntervalSessions = profile.effectiveIntervalSessions
+        let targetZoneSessions = WeeklyTargetService.targetZoneSessions(total: weeklyTarget, profile: profile)
+        let targetIntervalSessions = WeeklyTargetService.intervalSessions(total: weeklyTarget, profile: profile)
         let shouldDeferHighIntensity = profile.shouldAvoidHighIntensity(on: Date())
 
         switch focus {
@@ -114,9 +124,12 @@ struct RecommendationEngine {
         let targetLow = profile.zone2TargetLow
         let targetHigh = profile.zone2TargetHigh
         let exerciseType = preferredExerciseType(lastUsed: lastZ2.exerciseType, profile: profile)
+        let sourceMetrics = lastZ2.exerciseMetrics.isEmpty
+            ? defaultMetricsForInterval(exerciseType: exerciseType)
+            : lastZ2.exerciseMetrics
         var metrics = exerciseType != lastZ2.exerciseType
-            ? translateMetrics(from: lastZ2.exerciseType, to: exerciseType, metrics: lastZ2.metrics)
-            : lastZ2.metrics
+            ? translateMetrics(from: lastZ2.exerciseType, to: exerciseType, metrics: sourceMetrics)
+            : sourceMetrics
         var duration = lastZ2.duration
         var reasoning: String
         var adjustment: AdjustmentType
@@ -190,7 +203,12 @@ struct RecommendationEngine {
         let exerciseType = preferredExerciseType(lastUsed: fallbackType, profile: profile)
 
         var proto = lastOfType?.intervalProtocol ?? type.defaultIntervalProtocol!
-        let sourceMetrics = lastOfType?.metrics ?? defaultMetricsForInterval(exerciseType: exerciseType)
+        let sourceMetrics = {
+            if let lastOfType, !lastOfType.exerciseMetrics.isEmpty {
+                return lastOfType.exerciseMetrics
+            }
+            return defaultMetricsForInterval(exerciseType: exerciseType)
+        }()
         var metrics: [String: Double]
         if let lastType = lastOfType?.exerciseType, lastType != exerciseType {
             metrics = translateMetrics(from: lastType, to: exerciseType, metrics: sourceMetrics)
@@ -432,7 +450,9 @@ struct RecommendationEngine {
             targetDuration: workout.duration,
             targetHRLow: targetRange.lowerBound,
             targetHRHigh: targetRange.upperBound,
-            suggestedMetrics: workout.metrics,
+            suggestedMetrics: workout.exerciseMetrics.isEmpty
+                ? defaultMetricsForInterval(exerciseType: workout.exerciseType)
+                : workout.exerciseMetrics,
             intervalProtocol: workout.intervalProtocol,
             reasoning: reasoning,
             adjustmentType: .holdSteady

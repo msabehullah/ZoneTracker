@@ -161,8 +161,8 @@ final class ProgramExplanationTests: XCTestCase {
     // MARK: Weekly structure reflects user-selected training days
 
     func testWeeklyStructureSurfacesBothStartingAndCeiling() {
-        // New user (week 1), regular, freq=3, avail=7 → baseline=3, ceiling=7.
-        // Week 1 has 0 earned bumps → target=3.
+        // New user, regular, freq=3, avail=7 → baseline=3, ceiling=7.
+        // Profile-only effectiveSessionsPerWeek returns baseline (no workouts → no bumps).
         let profile = makeProfile(goal: .generalFitness, level: .regular)
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 7
@@ -186,8 +186,8 @@ final class ProgramExplanationTests: XCTestCase {
     }
 
     func testWeeklyStructureRespectsAvoidHighIntensityWithHeadroom() {
-        // New user (week 1), experienced, freq=3, avail=7.
-        // Week 1: baseline=3, 0 bumps → target=3.
+        // New user, experienced, freq=3, avail=7.
+        // Profile-only: baseline=3, ceiling=7.
         let profile = makeProfile(goal: .peakCardio, level: .experienced)
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 7
@@ -199,7 +199,7 @@ final class ProgramExplanationTests: XCTestCase {
                        "Constraint must suppress interval bullets even with ample days: \(structure.bullets)")
     }
 
-    func testWeeklyStructureRampCopyMentionsCadence() {
+    func testWeeklyStructureRampCopyMentionsCadenceAndConsistency() {
         let profile = makeProfile(goal: .generalFitness, level: .experienced)
         profile.weeklyCardioFrequency = 3
         profile.availableTrainingDays = 7
@@ -207,6 +207,8 @@ final class ProgramExplanationTests: XCTestCase {
 
         XCTAssertTrue(structure.body.contains("every 2 week"),
                       "Ramp copy should mention the cadence: \(structure.body)")
+        XCTAssertTrue(structure.body.lowercased().contains("consistent"),
+                      "Ramp copy must reference consistency since growth is consistency-driven: \(structure.body)")
     }
 
     // MARK: - First Workout Copy Derives From Passed Recommendation

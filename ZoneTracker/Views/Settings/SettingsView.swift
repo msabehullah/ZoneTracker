@@ -50,6 +50,7 @@ struct SettingsView: View {
                     notificationsSection
                     exportSection
                     dangerZone
+                    signOutSection
                 }
                 .padding(.horizontal)
                 .padding(.top, 16)
@@ -113,12 +114,9 @@ struct SettingsView: View {
             sectionHeader("Account")
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(accountStore.displayNamePresentation)
+                Text(accountStore.emailPresentation)
                     .font(.subheadline.bold())
                     .foregroundColor(.white)
-                Text(accountStore.emailPresentation)
-                    .font(.caption)
-                    .foregroundColor(.gray)
                 if let lastSyncDate = syncCoordinator.lastSyncDate {
                     Text("Last cloud sync: \(lastSyncDate.fullDate)")
                         .font(.caption2)
@@ -130,20 +128,6 @@ struct SettingsView: View {
                         .foregroundColor(.orange)
                 }
             }
-
-            Button(role: .destructive) {
-                accountStore.signOut()
-            } label: {
-                HStack {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                    Text("Sign Out")
-                }
-                .font(.subheadline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
         }
         .settingsCard()
     }
@@ -606,6 +590,27 @@ struct SettingsView: View {
             } message: {
                 Text("This will reset your training focus to the beginning. Your workout history is preserved.")
             }
+        }
+        .settingsCard()
+    }
+
+    private var signOutSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Session")
+
+            Button(role: .destructive) {
+                accountStore.signOut()
+            } label: {
+                HStack {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                    Text("Sign Out")
+                }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
         }
         .settingsCard()
     }

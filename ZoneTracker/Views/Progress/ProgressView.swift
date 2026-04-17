@@ -7,6 +7,7 @@ import Charts
 struct ProgressDashboardView: View {
     @Query(sort: \WorkoutEntry.date, order: .reverse) private var workouts: [WorkoutEntry]
     let profile: UserProfile
+    var onOpenSettings: (() -> Void)? = nil
 
     @State private var viewModel = ProgressViewModel()
 
@@ -29,6 +30,18 @@ struct ProgressDashboardView: View {
             .navigationTitle("Progress")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                if let onOpenSettings {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: onOpenSettings) {
+                            Image(systemName: "line.3.horizontal")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                        }
+                        .accessibilityLabel("Open Settings")
+                    }
+                }
+            }
             .task {
                 await viewModel.load(workouts: workouts, profile: profile)
             }
@@ -80,7 +93,7 @@ struct ProgressDashboardView: View {
 
             HStack(spacing: 12) {
                 timelineMetric(title: "Started", value: currentItem.startDate.shortDate)
-                timelineMetric(title: "Target", value: "\(profile.effectiveSessionsPerWeek)×/week")
+                timelineMetric(title: "Target", value: "\(WeeklyTargetService.currentTarget(profile: profile, workouts: Array(workouts)))×/week")
                 timelineMetric(title: "Status", value: currentItem.endDate == nil ? "Current" : "Completed")
             }
         }

@@ -873,25 +873,6 @@ private struct AssessmentConnectStep: View {
         }
     }
 
-    /// Starting target for a brand-new user (week 1 = no ramp bumps yet).
-    /// Mirrors `UserProfile.baselineSessionsPerWeek` logic so the connect
-    /// step shows the same number the plan overview will.
-    private var startingTarget: Int {
-        let baseline: Int
-        if draft.fitnessLevel == .beginner {
-            baseline = 2
-        } else {
-            baseline = max(1, min(7, draft.effectiveWeeklyCardioFrequency))
-        }
-        let ceiling = max(1, min(7, draft.availableTrainingDays))
-        return max(1, min(ceiling, baseline))
-    }
-
-    private var hasBuildHeadroom: Bool {
-        let ceiling = max(1, min(7, draft.availableTrainingDays))
-        return ceiling > startingTarget
-    }
-
     private var planSummary: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("YOUR PLAN")
@@ -902,9 +883,9 @@ private struct AssessmentConnectStep: View {
             FlexibleWrap(spacing: 8) {
                 planSummaryPill(draft.primaryGoal.shortName)
                 planSummaryPill(draft.fitnessLevel.displayName)
-                planSummaryPill("Starting \(startingTarget)×/week")
-                if hasBuildHeadroom {
-                    planSummaryPill("→ \(draft.availableTrainingDays)×/week")
+                planSummaryPill("Starting \(draft.startingSessionsPerWeek)×/week")
+                if draft.hasHeadroomToBuild {
+                    planSummaryPill("→ \(draft.availableSessionsCeiling)×/week")
                 }
             }
         }

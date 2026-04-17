@@ -81,19 +81,6 @@ private struct CoachingPage: View {
                     .foregroundColor(statusColor.opacity(0.6))
             }
 
-            Text(manager.activeTargetText)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundColor(.gray)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            Text(manager.coachingMessage)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(statusColor)
-                .multilineTextAlignment(.center)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
             Spacer(minLength: 0)
 
             metricsStrip
@@ -117,8 +104,10 @@ private struct CoachingPage: View {
                 .clipShape(Capsule())
             Spacer()
             Text(manager.formattedElapsed)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.85))
+                .font(.system(size: 26, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .contentTransition(.numericText())
         }
     }
@@ -132,34 +121,27 @@ private struct CoachingPage: View {
                 metricCell(label: "CAL", value: manager.fallbackSecondaryValue)
                 metricCell(label: "AVG HR", value: "\(manager.averageHR)")
             }
-            metricCell(
-                label: "ON TGT",
-                value: "\(manager.adherencePercent)%",
-                tint: statusColor
-            )
         }
+        .frame(height: 64)
     }
 
-    private func metricCell(
-        label: String,
-        value: String,
-        tint: Color = .white
-    ) -> some View {
-        VStack(spacing: 1) {
+    private func metricCell(label: String, value: String) -> some View {
+        VStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 8, weight: .heavy, design: .rounded))
+                .font(.system(size: 10, weight: .heavy, design: .rounded))
                 .foregroundColor(.gray)
             Text(value)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundColor(tint)
+                .font(.system(size: 20, weight: .bold, design: .monospaced))
+                .foregroundColor(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .contentTransition(.numericText())
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 5)
+        .frame(maxHeight: .infinity)
+        .padding(.vertical, 8)
         .background(Color(white: 0.12))
-        .cornerRadius(7)
+        .cornerRadius(9)
     }
 }
 

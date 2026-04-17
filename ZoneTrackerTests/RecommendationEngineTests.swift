@@ -94,6 +94,10 @@ final class RecommendationEngineTests: XCTestCase {
 
     func testRepeatLastWorkoutWhenMissedSessions() {
         let profile = makeProfile(phase: .phase1)
+        // Ensure baseline=3 so missing 2+ triggers the gate even without
+        // workout history to earn ramp bumps (baseline=ceiling=3).
+        profile.weeklyCardioFrequency = 3
+        profile.availableTrainingDays = 3
         // Only 1 workout last week (target is 3) — missed 2+
         let lastWeekStart = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: Date().startOfWeek)!
         let workout = WorkoutEntry(
@@ -182,11 +186,49 @@ final class RecommendationEngineTests: XCTestCase {
                       "First workout should use preferred exercise type")
     }
 
+    func testWatchSupplementalMetricsDoNotLeakIntoRecommendationMetrics() {
+        let profile = makeProfile(phase: .phase1)
+        let workouts = lastWeekFillers() + [
+            WorkoutEntry(
+                date: Date(),
+                exerciseType: .treadmill,
+                duration: 40 * 60,
+                metrics: [
+                    "distanceMeters": 4_100,
+                    "timeInTarget": 1_600,
+                    "completedSegments": 1,
+                    "plannedSegments": 1
+                ],
+                sessionType: .zone2,
+                heartRateData: HeartRateData(
+                    avgHR: 140,
+                    maxHR: 154,
+                    minHR: 130,
+                    timeInZone2: 1_600,
+                    timeInZone4Plus: 0,
+                    hrDrift: 3.0,
+                    recoveryHR: 28,
+                    samples: []
+                ),
+                phase: .phase1,
+                weekNumber: 4
+            )
+        ]
+
+        let rec = RecommendationEngine.recommend(profile: profile, workouts: workouts)
+
+        XCTAssertNil(rec.suggestedMetrics["distanceMeters"])
+        XCTAssertNil(rec.suggestedMetrics["timeInTarget"])
+        XCTAssertNotNil(rec.suggestedMetrics["speed"])
+    }
+
     // MARK: - Helpers
 
     private func makeProfile(phase: TrainingPhase = .phase1) -> UserProfile {
         let profile = UserProfile()
         profile.phase = phase
+        profile.weeklyCardioFrequency = 3
+        profile.availableTrainingDays = 5
         profile.phaseStartDate = Calendar.current.date(byAdding: .weekOfYear, value: -6, to: Date()) ?? Date()
         return profile
     }

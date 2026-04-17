@@ -3,6 +3,12 @@ import SwiftData
 
 // MARK: - Workout Entry
 
+struct WorkoutSupplementalMetric: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let value: String
+}
+
 enum WorkoutSource: String, Codable, CaseIterable, Sendable {
     case manualEntry
     case healthKitImport
@@ -99,6 +105,65 @@ final class WorkoutEntry {
             return (try? JSONDecoder().decode([String: Double].self, from: data)) ?? [:]
         }
         set { metricsData = try? JSONEncoder().encode(newValue) }
+    }
+
+    var exerciseMetrics: [String: Double] {
+        let allowedKeys = Set(exerciseType.metricDefinitions.map(\.key))
+        return metrics.filter { allowedKeys.contains($0.key) }
+    }
+
+    var supplementalMetrics: [String: Double] {
+        let allowedKeys = Set(exerciseType.metricDefinitions.map(\.key))
+        return metrics.filter { !allowedKeys.contains($0.key) }
+    }
+
+    var supplementalMetricRows: [WorkoutSupplementalMetric] {
+        var rows: [WorkoutSupplementalMetric] = []
+
+        if let distanceMeters = supplementalMetrics["distanceMeters"], distanceMeters > 0 {
+            let miles = distanceMeters / 1609.344
+            rows.append(
+                WorkoutSupplementalMetric(
+                    id: "distanceMeters",
+                    title: "Distance",
+                    value: String(format: "%.2f mi", miles)
+                )
+            )
+        }
+
+        if let timeInTarget = supplementalMetrics["timeInTarget"], timeInTarget > 0 {
+            rows.append(
+                WorkoutSupplementalMetric(
+                    id: "timeInTarget",
+                    title: "Time on Target",
+                    value: TimeInterval(timeInTarget).minutesAndSeconds
+                )
+            )
+        }
+
+        if let calories = supplementalMetrics["calories"], calories > 0 {
+            rows.append(
+                WorkoutSupplementalMetric(
+                    id: "calories",
+                    title: "Calories",
+                    value: "\(Int(calories)) kcal"
+                )
+            )
+        }
+
+        if let plannedSegments = supplementalMetrics["plannedSegments"],
+           plannedSegments > 0 {
+            let completedSegments = Int(supplementalMetrics["completedSegments"] ?? 0)
+            rows.append(
+                WorkoutSupplementalMetric(
+                    id: "segments",
+                    title: "Segments",
+                    value: "\(completedSegments)/\(Int(plannedSegments)) completed"
+                )
+            )
+        }
+
+        return rows
     }
 
     var heartRateData: HeartRateData {
